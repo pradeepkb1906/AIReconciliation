@@ -2514,124 +2514,43 @@ class Tools:
 
     async def reconcile(
         self,
-        left_records: Optional[List[Dict[str, Any]]] = None,
-        right_records: Optional[List[Dict[str, Any]]] = None,
         sector: Optional[str] = None,
         region: Optional[str] = None,
-        key_fields: Optional[List[str]] = None,
-        amount_fields: Optional[List[str]] = None,
-        tolerance: Optional[float] = None,
-        regulations: Optional[List[str]] = None,
         as_of: Optional[str] = None,
         output_name: Optional[str] = None,
-        narrative: Optional[List[Dict[str, str]]] = None,
+        tolerance: Optional[float] = None,
         __event_emitter__=None,
     ):
-        """Launch the AI Reconciliation wizard, or render a server-side report if records are supplied.
+        """Launch the AI Reconciliation wizard in an inline iframe.
 
-        Default behaviour: call this tool with no arguments. The inline iframe
-        renders a stepwise wizard that lets the user upload two datasets
-        (CSV / TSV / XLSX / XLS / DOCX / PPTX / PDF / JSON), configure
-        matching rules, run reconciliation in the browser, and download
-        XLSX / CSV / PDF / DOCX outputs that carry a full audit trail
-        (run ID, SHA-256 of inputs, operator, regulation tags).
+        Call this tool whenever the user expresses a reconciliation intent —
+        uploading files, comparing two datasets, month-end close, etc.
+        The iframe renders a stepwise wizard that lets the user upload two
+        datasets (CSV / TSV / XLSX / XLS / DOCX / PPTX / PDF / JSON),
+        configure matching rules, run reconciliation in the browser, and
+        download XLSX / CSV / PDF / DOCX outputs with a full audit trail
+        (run ID, SHA-256 of inputs, operator name, regulation tags).
 
-        Advanced path (server-side): if you have already parsed two datasets
-        from chat context into lists of flat dicts, pass them via left_records
-        and right_records and the tool will produce a static report with
-        ooXML downloads (XLSX / DOCX / PPTX) built by Python — this is the
-        fallback used when client-side CDN libraries are blocked.
+        All file parsing, matching, and output generation runs client-side
+        for speed. No records round-trip to Python. CSV-only fallback
+        kicks in automatically when CDN scripts are blocked.
 
-        :param left_records: Optional left-hand dataset as a list of flat dicts. Omit to launch the wizard.
-        :param right_records: Optional right-hand dataset as a list of flat dicts. Omit to launch the wizard.
-        :param sector: Business sector (Banking, Investment Banking, Insurance, Healthcare, Asset Management, Pharma Clinical, Energy, Telecommunications, Retail, Manufacturing, Public Sector, Technology, Transportation, Other).
-        :param region: Regulatory region (USA, European Union, United Kingdom, Global).
-        :param key_fields: Column names to use as the matching key.
-        :param amount_fields: Numeric column names to compare for variance.
-        :param tolerance: Absolute tolerance for numeric equality.
-        :param regulations: Regulation tags to display.
-        :param as_of: Reporting date (YYYY-MM-DD).
-        :param output_name: Base filename (without extension) for downloads.
-        :param narrative: Optional list of {severity, regulation, text} commentary items.
-        :return: Inline HTMLResponse — wizard by default, report when records are supplied.
+        :param sector: Optional sector hint to pre-select (Banking, Investment Banking, Insurance, Healthcare, Asset Management, Pharma Clinical, Energy, Telecommunications, Retail, Manufacturing, Public Sector, Technology, Transportation, Other).
+        :param region: Optional region hint to pre-select (USA, European Union, United Kingdom, Global).
+        :param as_of: Optional reporting date YYYY-MM-DD.
+        :param output_name: Optional base filename for downloads.
+        :param tolerance: Optional absolute tolerance for numeric equality.
+        :return: Inline HTMLResponse rendering the wizard.
         """
-        has_left = isinstance(left_records, list) and any(isinstance(r, dict) for r in left_records)
-        has_right = isinstance(right_records, list) and any(isinstance(r, dict) for r in right_records)
-        if not has_left and not has_right:
-            log.info("[recon] launching wizard (no records supplied)")
+        log.info("[recon] launching wizard: sector=%r region=%r", sector, region)
+        try:
             return HTMLResponse(content=_wizard_shell_html(), headers={"Content-Disposition": "inline"})
-        log.info(
-            "[recon] invoked: left=%s (%s items), right=%s (%s items), sector=%r, region=%r, key_fields=%r, amount_fields=%r, tolerance=%r, narrative_len=%s",
-            type(left_records).__name__,
-            (len(left_records) if isinstance(left_records, list) else "n/a"),
-            type(right_records).__name__,
-            (len(right_records) if isinstance(right_records, list) else "n/a"),
-            sector,
-            region,
-            key_fields,
-            amount_fields,
-            tolerance,
-            (len(narrative) if isinstance(narrative, list) else "n/a"),
-        )
-        if __event_emitter__:
-            await __event_emitter__({"type": "status", "data": {"description": "Parsing inputs…", "done": False}})
-
-        def _coerce(records: Any, side: str) -> List[Dict[str, Any]]:
-            if records is None:
-                return []
-            if isinstance(records, dict):
-                records = [records]
-            if not isinstance(records, list):
-                raise ValueError(
-                    f"'{side}_records' must be a JSON array of flat objects (dicts). "
-                    "Please upload the file or paste the table so the assistant can parse it into record objects."
-                )
-            out: List[Dict[str, Any]] = []
-            for i, row in enumerate(records):
-                if isinstance(row, dict):
-                    out.append(row)
-                elif isinstance(row, str):
-                    raise ValueError(
-                        f"'{side}_records[{i}]' is a string, not an object. "
-                        "Parse each uploaded file into a list of {{column: value}} dicts before calling the tool."
-                    )
-                else:
-                    raise ValueError(
-                        f"'{side}_records[{i}]' must be an object with column-name keys; got {type(row).__name__}."
-                    )
-            return out
-
-        try:
-            left = _coerce(left_records, "left")
-            right = _coerce(right_records, "right")
-        except ValueError as ve:
-            log.warning("[recon] coerce error: %s", ve)
-            return HTMLResponse(
-                content=_error_shell(str(ve)),
-                headers={"Content-Disposition": "inline"},
-            )
-
-        if not left and not right:
-            return HTMLResponse(
-                content=_error_shell(
-                    "No records supplied. Please upload two tabular files (CSV / XLSX / TSV) to reconcile, "
-                    "or paste the two tables into the chat. The assistant will parse them and re-invoke this tool."
-                ),
-                headers={"Content-Disposition": "inline"},
-            )
-
-        try:
-            return await _do_reconcile(
-                self.valves, left, right, sector, region, key_fields, amount_fields,
-                tolerance, regulations, as_of, output_name, narrative, __event_emitter__,
-            )
         except Exception as exc:
             tb = traceback.format_exc()
-            log.error("[recon] unhandled exception: %s\n%s", exc, tb)
+            log.error("[recon] wizard render failed: %s\n%s", exc, tb)
             return HTMLResponse(
                 content=_error_shell(
-                    f"Reconciliation failed with: {type(exc).__name__}: {exc}. "
-                    "Check Open WebUI server logs for full traceback (grep for '[recon]')."
+                    f"Wizard render failed with: {type(exc).__name__}: {exc}."
                 ),
                 headers={"Content-Disposition": "inline"},
             )

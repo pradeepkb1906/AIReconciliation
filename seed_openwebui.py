@@ -62,25 +62,28 @@ def get_admin_user_id(con: sqlite3.Connection) -> str:
 
 
 def tool_specs() -> list:
-    """Function-calling spec exposed to the LLM."""
+    """Function-calling spec exposed to the LLM.
+
+    Scalars only — array-of-object params caused the upstream litellm
+    proxy to throw "'list' object has no attribute 'get'" while
+    translating OpenAI tool schema to Bedrock Anthropic format.
+    """
     return [
         {
             "name": "reconcile",
             "description": (
-                "Launch the AI Reconciliation wizard (inline iframe). Call with NO arguments when the "
-                "user expresses a reconciliation intent. The wizard walks them through Scope & "
-                "Jurisdiction, Upload Datasets (CSV / TSV / XLSX / XLS / DOCX / PPTX / PDF / JSON), "
-                "Matching Rules, Run, and Review & Download (XLSX / CSV / PDF / DOCX) — all "
-                "client-side with an ooXML server fallback. Advanced: only pass left_records and "
-                "right_records if you have ALREADY parsed both datasets from chat context and need a "
-                "static server-rendered report (CDN-blocked environments)."
+                "Launch the AI Reconciliation wizard (inline iframe). Call this tool on any "
+                "reconciliation intent — upload two files, compare datasets, month-end close. "
+                "The wizard walks the user through Scope, Upload (CSV / TSV / XLSX / XLS / "
+                "DOCX / PPTX / PDF / JSON), Matching Rules, Run, and Review & Download "
+                "(XLSX / CSV / PDF / DOCX). All parsing and output is client-side."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "sector": {
                         "type": "string",
-                        "description": "Optional sector hint to pre-select in the wizard.",
+                        "description": "Optional sector hint.",
                         "enum": [
                             "Banking",
                             "Investment Banking",
@@ -100,36 +103,12 @@ def tool_specs() -> list:
                     },
                     "region": {
                         "type": "string",
-                        "description": "Optional region hint to pre-select in the wizard.",
+                        "description": "Optional region hint.",
                         "enum": ["USA", "European Union", "United Kingdom", "Global"],
                     },
                     "as_of": {"type": "string", "description": "Optional reporting date YYYY-MM-DD."},
-                    "output_name": {"type": "string", "description": "Optional base filename for downloads."},
-                    "left_records": {
-                        "type": "array",
-                        "items": {"type": "object"},
-                        "description": "ADVANCED: only if pre-parsed. Omit to launch the wizard.",
-                    },
-                    "right_records": {
-                        "type": "array",
-                        "items": {"type": "object"},
-                        "description": "ADVANCED: only if pre-parsed. Omit to launch the wizard.",
-                    },
-                    "key_fields": {"type": "array", "items": {"type": "string"}},
-                    "amount_fields": {"type": "array", "items": {"type": "string"}},
-                    "tolerance": {"type": "number"},
-                    "regulations": {"type": "array", "items": {"type": "string"}},
-                    "narrative": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "severity": {"type": "string", "enum": ["high", "medium", "low"]},
-                                "regulation": {"type": "string"},
-                                "text": {"type": "string"},
-                            },
-                        },
-                    },
+                    "output_name": {"type": "string", "description": "Optional base filename."},
+                    "tolerance": {"type": "number", "description": "Optional absolute tolerance."},
                 },
                 "required": [],
             },
