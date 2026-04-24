@@ -2543,11 +2543,18 @@ class Tools:
         :return: Inline HTMLResponse rendering the wizard.
         """
         log.info("[recon] launching wizard: sector=%r region=%r", sector, region)
+        if __event_emitter__:
+            await __event_emitter__({"type": "status", "data": {"description": "Loading reconciliation wizard...", "done": False}})
         try:
-            return HTMLResponse(content=_wizard_shell_html(), headers={"Content-Disposition": "inline"})
+            html = _wizard_shell_html()
+            if __event_emitter__:
+                await __event_emitter__({"type": "status", "data": {"description": "Wizard ready.", "done": True}})
+            return HTMLResponse(content=html, headers={"Content-Disposition": "inline"})
         except Exception as exc:
             tb = traceback.format_exc()
             log.error("[recon] wizard render failed: %s\n%s", exc, tb)
+            if __event_emitter__:
+                await __event_emitter__({"type": "status", "data": {"description": f"Error: {type(exc).__name__}", "done": True}})
             return HTMLResponse(
                 content=_error_shell(
                     f"Wizard render failed with: {type(exc).__name__}: {exc}."
