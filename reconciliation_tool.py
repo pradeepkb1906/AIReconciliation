@@ -495,6 +495,18 @@ OBSERVER_SCRIPT = r"""
 # ---------------------------------------------------------------------------
 
 
+def _error_shell(message: str) -> str:
+    safe = htmlmod.escape(message)
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>{THEME_CSS}</style></head><body>
+<div class="ibm-masthead"><div class="brand"><span class="dot"></span>IBM Consulting Advantage · AI Reconciliation</div>
+<div class="meta">Input required</div></div>
+<div class="ibm-shell"><div class="ibm-card"><header>Unable to reconcile</header>
+<div class="body"><p>{safe}</p>
+<p style="color:var(--ibm-text-2);font-size:12px;margin-top:12px;">Tip: drop both files into the chat using the paperclip icon, then ask the assistant to reconcile them.</p>
+</div></div></div></body></html>"""
+
+
 def _shell_html(
     meta: Dict[str, Any],
     server_fallback: Dict[str, Dict[str, str]],
@@ -1083,8 +1095,48 @@ class Tools:
         if __event_emitter__:
             await __event_emitter__({"type": "status", "data": {"description": "Parsing inputs…", "done": False}})
 
-        left = list(left_records or [])
-        right = list(right_records or [])
+        def _coerce(records: Any, side: str) -> List[Dict[str, Any]]:
+            if records is None:
+                return []
+            if isinstance(records, dict):
+                records = [records]
+            if not isinstance(records, list):
+                raise ValueError(
+                    f"'{side}_records' must be a JSON array of flat objects (dicts). "
+                    "Please upload the file or paste the table so the assistant can parse it into record objects."
+                )
+            out: List[Dict[str, Any]] = []
+            for i, row in enumerate(records):
+                if isinstance(row, dict):
+                    out.append(row)
+                elif isinstance(row, str):
+                    raise ValueError(
+                        f"'{side}_records[{i}]' is a string, not an object. "
+                        "Parse each uploaded file into a list of {{column: value}} dicts before calling the tool."
+                    )
+                else:
+                    raise ValueError(
+                        f"'{side}_records[{i}]' must be an object with column-name keys; got {type(row).__name__}."
+                    )
+            return out
+
+        try:
+            left = _coerce(left_records, "left")
+            right = _coerce(right_records, "right")
+        except ValueError as ve:
+            return HTMLResponse(
+                content=_error_shell(str(ve)),
+                headers={"Content-Disposition": "inline"},
+            )
+
+        if not left and not right:
+            return HTMLResponse(
+                content=_error_shell(
+                    "No records supplied. Please upload two tabular files (CSV / XLSX / TSV) to reconcile, "
+                    "or paste the two tables into the chat. The assistant will parse them and re-invoke this tool."
+                ),
+                headers={"Content-Disposition": "inline"},
+            )
 
         # Sector-specific defaults for key & amount fields
         defaults = _sector_defaults(sector)
