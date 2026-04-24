@@ -1,0 +1,9 @@
+PolicyNumber,EffectiveDate,Product,Insured,GrossPremium,NetPremium,Commission,Currency,Status,LineOfBusiness
+POL-2026-7001,2026-01-15,Commercial Property,Meridian Logistics Inc,85000.00,76500.00,8500.00,USD,ACTIVE,Property
+POL-2026-7002,2026-01-20,General Liability,Apex Manufacturing Ltd,62000.00,55800.00,6200.00,USD,ACTIVE,Casualty
+POL-2026-7003,2026-02-01,Marine Cargo,Nordic Shipping AS,140000.00,126000.00,14000.00,EUR,ACTIVE,Marine
+POL-2026-7004,2026-02-10,Professional Indemnity,Vertex Consulting GmbH,48000.00,43200.00,4800.00,EUR,ACTIVE,Casualty
+POL-2026-7005,2026-02-15,Cyber,DataNova Systems,95000.00,85500.00,9500.00,USD,ACTIVE,Specialty
+POL-2026-7006,2026-03-01,Aviation Hull,Horizon Airlines Ltd,320000.00,288000.00,32000.00,GBP,ACTIVE,Aviation
+POL-2026-7007,2026-03-08,D&O,Luminary Holdings Plc,72000.00,64800.00,7200.00,GBP,ACTIVE,Casualty
+POL-2026-7008,2026-03-15,Workers Compensation,Granite Industrial Corp,155000.00,139500.00,15500.00,USD,ACTIVE,Workers Comp
