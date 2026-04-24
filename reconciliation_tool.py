@@ -11,9 +11,14 @@ import base64
 import html as htmlmod
 import io
 import json
+import logging
 import re
 import time
+import traceback
 import uuid
+
+log = logging.getLogger("reconciliation_tool")
+log.setLevel(logging.INFO)
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi.responses import HTMLResponse
@@ -1092,6 +1097,19 @@ class Tools:
         :param narrative: Optional list of {severity, regulation, text} commentary items.
         :return: Inline HTMLResponse with interactive report and CDN/ooXML download buttons.
         """
+        log.info(
+            "[recon] invoked: left=%s (%s items), right=%s (%s items), sector=%r, region=%r, key_fields=%r, amount_fields=%r, tolerance=%r, narrative_len=%s",
+            type(left_records).__name__,
+            (len(left_records) if isinstance(left_records, list) else "n/a"),
+            type(right_records).__name__,
+            (len(right_records) if isinstance(right_records, list) else "n/a"),
+            sector,
+            region,
+            key_fields,
+            amount_fields,
+            tolerance,
+            (len(narrative) if isinstance(narrative, list) else "n/a"),
+        )
         if __event_emitter__:
             await __event_emitter__({"type": "status", "data": {"description": "Parsing inputs…", "done": False}})
 
@@ -1124,6 +1142,7 @@ class Tools:
             left = _coerce(left_records, "left")
             right = _coerce(right_records, "right")
         except ValueError as ve:
+            log.warning("[recon] coerce error: %s", ve)
             return HTMLResponse(
                 content=_error_shell(str(ve)),
                 headers={"Content-Disposition": "inline"},
@@ -1138,73 +1157,102 @@ class Tools:
                 headers={"Content-Disposition": "inline"},
             )
 
-        # Sector-specific defaults for key & amount fields
-        defaults = _sector_defaults(sector)
-        kf = key_fields or defaults["key_fields"]
-        af = amount_fields or defaults["amount_fields"]
-        tol = float(tolerance) if tolerance is not None else self.valves.default_tolerance
-        regs = regulations or defaults["regulations"].get(region, defaults["regulations"].get("USA", []))
+        try:
+            return await _do_reconcile(
+                self.valves, left, right, sector, region, key_fields, amount_fields,
+                tolerance, regulations, as_of, output_name, narrative, __event_emitter__,
+            )
+        except Exception as exc:
+            tb = traceback.format_exc()
+            log.error("[recon] unhandled exception: %s\n%s", exc, tb)
+            return HTMLResponse(
+                content=_error_shell(
+                    f"Reconciliation failed with: {type(exc).__name__}: {exc}. "
+                    "Check Open WebUI server logs for full traceback (grep for '[recon]')."
+                ),
+                headers={"Content-Disposition": "inline"},
+            )
 
-        if __event_emitter__:
-            await __event_emitter__({"type": "status", "data": {"description": f"Matching {len(left)} vs {len(right)} records on {', '.join(kf)}…", "done": False}})
 
-        result = _reconcile(left, right, kf, af, tol)
+async def _do_reconcile(
+    valves,
+    left,
+    right,
+    sector,
+    region,
+    key_fields,
+    amount_fields,
+    tolerance,
+    regulations,
+    as_of,
+    output_name,
+    narrative,
+    event_emitter,
+):
+    defaults = _sector_defaults(sector)
+    kf = key_fields or defaults["key_fields"]
+    af = amount_fields or defaults["amount_fields"]
+    tol = float(tolerance) if tolerance is not None else valves.default_tolerance
+    regs = regulations or defaults["regulations"].get(region, defaults["regulations"].get("USA", []))
 
-        # Redact PII for healthcare/pharma sectors in ALL outputs
-        redacted = False
-        if sector.lower() in ("healthcare", "pharma clinical", "pharma_clinical", "pharmaceutical"):
-            for bucket in ("matched", "variance", "unmatched_left", "unmatched_right"):
-                result[bucket] = _redact_pii(result[bucket], sector)
-            redacted = True
+    if event_emitter:
+        await event_emitter({"type": "status", "data": {"description": f"Matching {len(left)} vs {len(right)} records on {', '.join(kf)}…", "done": False}})
 
-        # Truncate previews per valve
-        cap = self.valves.max_preview_rows
+    result = _reconcile(left, right, kf, af, tol)
+
+    redacted = False
+    if sector.lower() in ("healthcare", "pharma clinical", "pharma_clinical", "pharmaceutical"):
         for bucket in ("matched", "variance", "unmatched_left", "unmatched_right"):
-            if len(result[bucket]) > cap:
-                result[bucket] = result[bucket][:cap]
+            result[bucket] = _redact_pii(result[bucket], sector)
+        redacted = True
 
-        run_id = uuid.uuid4().hex[:8]
-        meta = {
-            "title": f"AI Reconciliation — {sector} ({region})",
-            "sector": sector,
-            "region": region,
-            "regulations": regs,
-            "asOf": as_of or time.strftime("%Y-%m-%d"),
-            "runId": run_id,
-            "outputName": output_name or f"reconciliation_{sector.lower().replace(' ', '_')}",
-            "redacted": redacted,
-        }
-        payload = {
-            "meta": meta,
-            "stats": result["stats"],
-            "matched": result["matched"],
-            "variance": result["variance"],
-            "unmatched_left": result["unmatched_left"],
-            "unmatched_right": result["unmatched_right"],
-            "narrative": narrative or [],
-        }
+    cap = valves.max_preview_rows
+    for bucket in ("matched", "variance", "unmatched_left", "unmatched_right"):
+        if len(result[bucket]) > cap:
+            result[bucket] = result[bucket][:cap]
 
-        if __event_emitter__:
-            await __event_emitter__({"type": "status", "data": {"description": "Building ooXML server fallback (XLSX / DOCX / PPTX)…", "done": False}})
+    run_id = uuid.uuid4().hex[:8]
+    meta = {
+        "title": f"AI Reconciliation — {sector} ({region})",
+        "sector": sector,
+        "region": region,
+        "regulations": regs,
+        "asOf": as_of or time.strftime("%Y-%m-%d"),
+        "runId": run_id,
+        "outputName": output_name or f"reconciliation_{sector.lower().replace(' ', '_')}",
+        "redacted": redacted,
+    }
+    payload = {
+        "meta": meta,
+        "stats": result["stats"],
+        "matched": result["matched"],
+        "variance": result["variance"],
+        "unmatched_left": result["unmatched_left"],
+        "unmatched_right": result["unmatched_right"],
+        "narrative": narrative or [],
+    }
 
-        base_name = f"{meta['outputName']}_{meta['asOf'].replace('-', '')}"
-        server_fallback = _build_server_fallback(payload, base_name)
+    if event_emitter:
+        await event_emitter({"type": "status", "data": {"description": "Building ooXML server fallback (XLSX / DOCX / PPTX)…", "done": False}})
 
-        html = _shell_html(meta, server_fallback, inline_payload=payload)
+    base_name = f"{meta['outputName']}_{meta['asOf'].replace('-', '')}"
+    server_fallback = _build_server_fallback(payload, base_name)
 
-        if __event_emitter__:
-            await __event_emitter__({
-                "type": "status",
-                "data": {
-                    "description": (
-                        f"Reconciliation complete — {result['stats']['match_rate']}% match rate · "
-                        f"{result['stats']['variance']} variance · "
-                        f"{result['stats']['unmatched_left']+result['stats']['unmatched_right']} unmatched."
-                    ),
-                    "done": True,
-                },
-            })
-        return HTMLResponse(content=html, headers={"Content-Disposition": "inline"})
+    html = _shell_html(meta, server_fallback, inline_payload=payload)
+
+    if event_emitter:
+        await event_emitter({
+            "type": "status",
+            "data": {
+                "description": (
+                    f"Reconciliation complete — {result['stats']['match_rate']}% match rate · "
+                    f"{result['stats']['variance']} variance · "
+                    f"{result['stats']['unmatched_left']+result['stats']['unmatched_right']} unmatched."
+                ),
+                "done": True,
+            },
+        })
+    return HTMLResponse(content=html, headers={"Content-Disposition": "inline"})
 
 
 # ---------------------------------------------------------------------------
