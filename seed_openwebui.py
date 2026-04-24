@@ -67,25 +67,20 @@ def tool_specs() -> list:
         {
             "name": "reconcile",
             "description": (
-                "Reconcile two structured record sets (left vs right) from a regulated sector and render "
-                "an inline IBM-branded report with downloadable XLSX/DOCX/PPTX. Call once after parsing "
-                "the uploaded files into two lists of flat dicts."
+                "Launch the AI Reconciliation wizard (inline iframe). Call with NO arguments when the "
+                "user expresses a reconciliation intent. The wizard walks them through Scope & "
+                "Jurisdiction, Upload Datasets (CSV / TSV / XLSX / XLS / DOCX / PPTX / PDF / JSON), "
+                "Matching Rules, Run, and Review & Download (XLSX / CSV / PDF / DOCX) — all "
+                "client-side with an ooXML server fallback. Advanced: only pass left_records and "
+                "right_records if you have ALREADY parsed both datasets from chat context and need a "
+                "static server-rendered report (CDN-blocked environments)."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "left_records": {
-                        "type": "array",
-                        "items": {"type": "object"},
-                        "description": "Left-hand dataset (e.g. GL, blotter, policy ledger, 837, EDC).",
-                    },
-                    "right_records": {
-                        "type": "array",
-                        "items": {"type": "object"},
-                        "description": "Right-hand dataset (e.g. custodian, clearing, claims, 835, CRO).",
-                    },
                     "sector": {
                         "type": "string",
+                        "description": "Optional sector hint to pre-select in the wizard.",
                         "enum": [
                             "Banking",
                             "Investment Banking",
@@ -93,16 +88,37 @@ def tool_specs() -> list:
                             "Healthcare",
                             "Asset Management",
                             "Pharma Clinical",
+                            "Energy",
+                            "Telecommunications",
+                            "Retail",
+                            "Manufacturing",
+                            "Public Sector",
+                            "Technology",
+                            "Transportation",
                             "Other",
                         ],
                     },
-                    "region": {"type": "string", "enum": ["USA", "Europe", "Global"]},
+                    "region": {
+                        "type": "string",
+                        "description": "Optional region hint to pre-select in the wizard.",
+                        "enum": ["USA", "European Union", "United Kingdom", "Global"],
+                    },
+                    "as_of": {"type": "string", "description": "Optional reporting date YYYY-MM-DD."},
+                    "output_name": {"type": "string", "description": "Optional base filename for downloads."},
+                    "left_records": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "ADVANCED: only if pre-parsed. Omit to launch the wizard.",
+                    },
+                    "right_records": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "ADVANCED: only if pre-parsed. Omit to launch the wizard.",
+                    },
                     "key_fields": {"type": "array", "items": {"type": "string"}},
                     "amount_fields": {"type": "array", "items": {"type": "string"}},
                     "tolerance": {"type": "number"},
                     "regulations": {"type": "array", "items": {"type": "string"}},
-                    "as_of": {"type": "string"},
-                    "output_name": {"type": "string"},
                     "narrative": {
                         "type": "array",
                         "items": {
@@ -115,7 +131,7 @@ def tool_specs() -> list:
                         },
                     },
                 },
-                "required": ["left_records", "right_records", "sector"],
+                "required": [],
             },
         }
     ]
@@ -136,7 +152,7 @@ def tool_meta() -> dict:
 def model_meta() -> dict:
     return {
         "profile_image_url": "/static/favicon.png",
-        "description": "IBM Consulting Advantage — AI Reconciliation across Banking, Investment Banking, Insurance, Healthcare, Asset Management, and Pharma/Clinical for USA and EU regulatory regimes. Upload two regulated datasets; download a reconciled XLSX / DOCX / PPTX.",
+        "description": "IBM Consulting Advantage — AI Reconciliation. Stepwise inline wizard: Scope → Upload (CSV, TSV, XLSX, DOCX, PPTX, PDF, JSON) → Matching rules → Run → Download (XLSX, CSV, PDF, DOCX). USA, EU, UK, Global. Banking, Investment Banking, Insurance, Healthcare, Asset Management, Pharma, Energy, Telco, Retail, Manufacturing, Public Sector, Tech, Transportation. CDN-first with ooXML server fallback. Every output carries run ID, SHA-256 of inputs, and regulation tags for audit traceability.",
         "capabilities": {
             "vision": False,
             "usage": True,
@@ -146,11 +162,11 @@ def model_meta() -> dict:
             "code_interpreter": False,
         },
         "suggestion_prompts": [
-            {"content": "Reconcile these two Banking nostro files for March month-end (USA, BCBS 239)."},
-            {"content": "I have a trade blotter and a clearing statement — run MiFID II / EMIR reconciliation."},
-            {"content": "Reconcile 837 claims vs 835 remittance; HIPAA — redact PII in the download."},
-            {"content": "Custodian vs administrator position reconciliation for FUND-A-001, asset management."},
-            {"content": "Compare EDC vs CRO subject visits; flag any AE term drift (21 CFR Part 11)."},
+            {"content": "Start a Banking nostro reconciliation for USA (FFIEC / BCBS 239)."},
+            {"content": "Launch an EMIR / MiFID II trade-vs-clearing reconciliation for the European Union."},
+            {"content": "Begin an HIPAA 837-vs-835 claims reconciliation with PII redaction."},
+            {"content": "Open the reconciliation wizard — I have custodian and administrator NAV extracts to compare."},
+            {"content": "Start a reconciliation for manufacturing PO vs GRN, EU jurisdiction."},
         ],
         "tags": [
             {"name": "ibm-consulting-advantage"},

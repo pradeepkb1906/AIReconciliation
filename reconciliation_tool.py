@@ -1,8 +1,8 @@
 """
 title: AI Reconciliation
 author: IBM Consulting Advantage
-version: 1.0.0
-description: AI-assisted reconciliation across Banking, Investment Banking, Insurance, Healthcare, Asset Management, Pharma/Clinical for USA and EU regulatory regimes. Renders inline report and generates downloadable XLSX/DOCX/PPTX (CDN-first with always-on ooXML server-side fallback). Requires iframe Sandbox Allow Same Origin in Open WebUI Settings -> Interface.
+version: 2.0.0
+description: Stepwise in-iframe reconciliation wizard. Accepts CSV/TSV/XLSX/XLS/DOCX/PPTX/PDF/JSON uploads, runs deterministic matching in the browser, and generates XLSX/CSV/PDF/DOCX outputs accepted by USA and EU regulators (SOX, BCBS 239, EMIR, MiFID II, Solvency II, HIPAA, 21 CFR Part 11, GDPR, DORA). Falls back to server-side ooXML generation when CDN libraries are blocked. Requires iframe Sandbox Allow Same Origin in Open WebUI Settings -> Interface.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Literal, Optional
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-_BUILD = "1.0.0"
+_BUILD = "2.0.0"
 
 # ---------------------------------------------------------------------------
 # IBM Light Navy Blue theme
@@ -126,13 +126,189 @@ a {{ color: var(--ibm-blue); }}
 """
 
 # ---------------------------------------------------------------------------
+# Pastel wizard theme (IBM Light Navy, very light and pleasant)
+# ---------------------------------------------------------------------------
+
+WIZARD_CSS = """
+:root {
+  --wz-bg: #F4F8FC;
+  --wz-surface: #FFFFFF;
+  --wz-surface-soft: #EAF2FB;
+  --wz-surface-hover: #DCE8F6;
+  --wz-pastel: #E3EEFA;
+  --wz-pastel-2: #D1E2F3;
+  --wz-ink: #0F2A44;
+  --wz-ink-soft: #3B5472;
+  --wz-muted: #6B7F97;
+  --wz-accent: #4178BE;
+  --wz-accent-strong: #2A5C9A;
+  --wz-accent-soft: #BBD4EE;
+  --wz-border: #C7D9EC;
+  --wz-ring: rgba(65, 120, 190, 0.28);
+  --wz-ok: #2E7D32;
+  --wz-ok-soft: #E1F1E4;
+  --wz-warn: #B25F00;
+  --wz-warn-soft: #FFF4E0;
+  --wz-err: #B0241D;
+  --wz-err-soft: #FBE6E4;
+}
+.wz-root { background: var(--wz-bg); min-height: 100vh; padding: 24px 20px 60px; font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--wz-ink); }
+.wz-shell { max-width: 1160px; margin: 0 auto; }
+.wz-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; background: linear-gradient(135deg, #F7FAFE 0%, var(--wz-surface-soft) 100%); border: 1px solid var(--wz-border); border-radius: 12px; box-shadow: 0 1px 2px rgba(15,42,68,0.04); }
+.wz-head h1 { margin: 0; font-size: 18px; font-weight: 600; color: var(--wz-ink); letter-spacing: -0.01em; display: flex; align-items: center; gap: 12px; }
+.wz-head h1 .wz-dot { width: 10px; height: 10px; background: var(--wz-accent); border-radius: 50%; display: inline-block; box-shadow: 0 0 0 4px var(--wz-pastel); }
+.wz-head .wz-meta { font-size: 12px; color: var(--wz-muted); font-family: 'IBM Plex Mono', 'SF Mono', Menlo, monospace; }
+
+.wz-stepper { display: flex; align-items: stretch; gap: 0; margin: 18px 0 8px; padding: 14px 16px; background: var(--wz-surface); border: 1px solid var(--wz-border); border-radius: 12px; overflow-x: auto; }
+.wz-step { display: flex; align-items: center; gap: 10px; flex: 1 1 0; min-width: 180px; padding: 6px 12px; cursor: pointer; border-radius: 8px; color: var(--wz-ink-soft); transition: background 140ms ease; }
+.wz-step:hover { background: var(--wz-pastel); }
+.wz-step .wz-bullet { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--wz-pastel-2); color: var(--wz-accent-strong); font-size: 13px; font-weight: 600; border: 1px solid var(--wz-accent-soft); flex-shrink: 0; }
+.wz-step.active .wz-bullet { background: var(--wz-accent); color: #FFFFFF; border-color: var(--wz-accent); box-shadow: 0 0 0 4px var(--wz-ring); }
+.wz-step.done .wz-bullet { background: var(--wz-ok); color: #FFFFFF; border-color: var(--wz-ok); }
+.wz-step.done .wz-bullet::before { content: ''; width: 9px; height: 5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg) translate(0, -1px); position: absolute; }
+.wz-step.done .wz-bullet { position: relative; color: transparent; }
+.wz-step .wz-txt { display: flex; flex-direction: column; line-height: 1.2; }
+.wz-step .wz-tag { font-size: 11px; color: var(--wz-muted); letter-spacing: 0.02em; text-transform: uppercase; font-weight: 500; }
+.wz-step .wz-lbl { font-size: 13.5px; color: var(--wz-ink); font-weight: 500; }
+.wz-step.active .wz-lbl { color: var(--wz-accent-strong); font-weight: 600; }
+.wz-step .wz-bar { display: none; }
+
+.wz-panel { background: var(--wz-surface); border: 1px solid var(--wz-border); border-radius: 12px; padding: 22px 26px; margin-top: 16px; box-shadow: 0 1px 2px rgba(15,42,68,0.04); }
+.wz-panel h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; color: var(--wz-ink); }
+.wz-panel .wz-sub { margin: 0 0 20px; color: var(--wz-muted); font-size: 13.5px; }
+.wz-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.wz-field { display: flex; flex-direction: column; gap: 6px; }
+.wz-field label { font-size: 12.5px; font-weight: 500; color: var(--wz-ink-soft); letter-spacing: 0.01em; }
+.wz-field .wz-hint { font-size: 11.5px; color: var(--wz-muted); margin-top: 2px; }
+.wz-input, .wz-select, .wz-textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--wz-border); background: #FBFDFF; border-radius: 8px; color: var(--wz-ink); outline: none; transition: border-color 140ms, box-shadow 140ms, background 140ms; }
+.wz-input:focus, .wz-select:focus, .wz-textarea:focus { border-color: var(--wz-accent); box-shadow: 0 0 0 3px var(--wz-ring); background: #FFFFFF; }
+.wz-select { appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--wz-accent) 50%), linear-gradient(135deg, var(--wz-accent) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; background-size: 6px 6px; background-repeat: no-repeat; padding-right: 32px; }
+
+.wz-drop { border: 2px dashed var(--wz-accent-soft); border-radius: 12px; padding: 26px 20px; background: linear-gradient(180deg, #F7FBFF 0%, #EEF5FC 100%); text-align: center; transition: border-color 140ms, background 140ms, transform 140ms; cursor: pointer; }
+.wz-drop:hover, .wz-drop.wz-hover { border-color: var(--wz-accent); background: #E8F1FA; }
+.wz-drop.wz-has-files { border-style: solid; border-color: var(--wz-accent); background: #F1F7FD; }
+.wz-drop .wz-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--wz-pastel-2); display: grid; place-items: center; margin: 0 auto 10px; color: var(--wz-accent-strong); font-size: 22px; font-weight: 700; }
+.wz-drop .wz-title { font-weight: 600; color: var(--wz-ink); font-size: 14.5px; margin-bottom: 4px; }
+.wz-drop .wz-sub { color: var(--wz-muted); font-size: 12.5px; margin-bottom: 10px; }
+.wz-drop .wz-browse { display: inline-block; padding: 7px 14px; background: var(--wz-accent); color: #FFFFFF; border-radius: 999px; font-size: 12.5px; font-weight: 500; letter-spacing: 0.01em; }
+.wz-drop input[type=file] { display: none; }
+
+.wz-filelist { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.wz-file { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--wz-surface-soft); border: 1px solid var(--wz-border); border-radius: 8px; font-size: 12.5px; color: var(--wz-ink); }
+.wz-file .wz-ext { padding: 2px 8px; background: var(--wz-accent); color: #FFFFFF; border-radius: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+.wz-file .wz-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wz-file .wz-status { font-size: 11.5px; color: var(--wz-muted); }
+.wz-file .wz-status.ok { color: var(--wz-ok); }
+.wz-file .wz-status.err { color: var(--wz-err); }
+.wz-file .wz-rem { background: transparent; border: none; color: var(--wz-muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
+.wz-file .wz-rem:hover { background: var(--wz-err-soft); color: var(--wz-err); }
+
+.wz-progress { height: 8px; background: var(--wz-pastel); border-radius: 999px; overflow: hidden; margin-top: 8px; }
+.wz-progress-bar { height: 100%; background: linear-gradient(90deg, var(--wz-accent) 0%, var(--wz-accent-strong) 100%); border-radius: 999px; transition: width 180ms ease; width: 0%; }
+.wz-progress-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; font-size: 12.5px; color: var(--wz-ink-soft); }
+.wz-progress-row .wz-lbl { min-width: 150px; }
+.wz-progress-row .wz-val { margin-left: auto; color: var(--wz-muted); font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+
+.wz-preview { margin-top: 14px; border: 1px solid var(--wz-border); border-radius: 10px; overflow: hidden; }
+.wz-preview header { background: var(--wz-surface-soft); padding: 10px 14px; font-size: 12.5px; color: var(--wz-ink-soft); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wz-preview header .wz-tabselect { display: flex; gap: 6px; flex-wrap: wrap; }
+.wz-preview header .wz-tab { padding: 4px 10px; background: #FFFFFF; border: 1px solid var(--wz-border); border-radius: 999px; font-size: 11.5px; cursor: pointer; color: var(--wz-ink-soft); }
+.wz-preview header .wz-tab.active { background: var(--wz-accent); color: #FFFFFF; border-color: var(--wz-accent); }
+.wz-preview .wz-scroll { max-height: 260px; overflow: auto; background: #FFFFFF; }
+.wz-preview table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.wz-preview th { background: #F5F9FD; color: var(--wz-ink-soft); font-weight: 500; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--wz-border); position: sticky; top: 0; z-index: 2; }
+.wz-preview td { padding: 7px 10px; border-bottom: 1px solid #EEF3F8; color: var(--wz-ink); }
+.wz-preview tr:nth-child(even) td { background: #FBFDFF; }
+
+.wz-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--wz-border); }
+.wz-actions .wz-hint { font-size: 12px; color: var(--wz-muted); }
+.wz-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border: 1px solid var(--wz-accent); background: var(--wz-accent); color: #FFFFFF; border-radius: 8px; font: 500 13.5px 'IBM Plex Sans', sans-serif; cursor: pointer; transition: background 140ms, transform 80ms, box-shadow 140ms; }
+.wz-btn:hover { background: var(--wz-accent-strong); border-color: var(--wz-accent-strong); }
+.wz-btn:active { transform: translateY(1px); }
+.wz-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wz-btn.wz-secondary { background: #FFFFFF; color: var(--wz-accent-strong); border-color: var(--wz-accent-soft); }
+.wz-btn.wz-secondary:hover { background: var(--wz-pastel); border-color: var(--wz-accent); }
+.wz-btn.wz-ghost { background: transparent; color: var(--wz-ink-soft); border-color: transparent; }
+.wz-btn.wz-ghost:hover { background: var(--wz-pastel); color: var(--wz-ink); }
+
+.wz-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 8px; }
+.wz-kpi { background: linear-gradient(160deg, #FFFFFF 0%, var(--wz-surface-soft) 100%); border: 1px solid var(--wz-border); border-radius: 10px; padding: 14px 16px; }
+.wz-kpi .v { font-size: 24px; font-weight: 600; color: var(--wz-accent-strong); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.wz-kpi .l { font-size: 11.5px; color: var(--wz-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 500; }
+.wz-kpi.ok .v { color: var(--wz-ok); }
+.wz-kpi.warn .v { color: var(--wz-warn); }
+.wz-kpi.err .v { color: var(--wz-err); }
+
+.wz-tbl-wrap { margin-top: 14px; border: 1px solid var(--wz-border); border-radius: 10px; overflow: hidden; background: #FFFFFF; }
+.wz-tbl-wrap header { background: var(--wz-surface-soft); padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--wz-ink); display: flex; justify-content: space-between; align-items: center; }
+.wz-tbl-wrap .wz-count { color: var(--wz-muted); font-size: 12px; font-weight: 400; }
+.wz-tbl-wrap .wz-scroll { max-height: 360px; overflow: auto; }
+.wz-tbl-wrap table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.wz-tbl-wrap th { background: #EEF5FC; color: var(--wz-ink); font-weight: 500; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--wz-border); position: sticky; top: 0; }
+.wz-tbl-wrap td { padding: 7px 10px; border-bottom: 1px solid #EEF3F8; color: var(--wz-ink); }
+.wz-tbl-wrap tr:nth-child(even) td { background: #FAFCFE; }
+.wz-tbl-wrap td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+.wz-tbl-wrap td.delta-pos { color: var(--wz-ok); font-weight: 500; }
+.wz-tbl-wrap td.delta-neg { color: var(--wz-err); font-weight: 500; }
+
+.wz-banner { padding: 12px 14px; border-radius: 10px; margin: 12px 0; font-size: 13px; display: flex; align-items: flex-start; gap: 10px; }
+.wz-banner.info { background: var(--wz-pastel); color: var(--wz-accent-strong); border: 1px solid var(--wz-accent-soft); }
+.wz-banner.warn { background: var(--wz-warn-soft); color: var(--wz-warn); border: 1px solid #F5D6A0; }
+.wz-banner.err { background: var(--wz-err-soft); color: var(--wz-err); border: 1px solid #F3B8B3; }
+.wz-banner.ok { background: var(--wz-ok-soft); color: var(--wz-ok); border: 1px solid #B7DDBE; }
+
+.wz-signoff { background: var(--wz-surface-soft); border: 1px solid var(--wz-border); border-radius: 10px; padding: 14px 16px; margin-top: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--wz-ink-soft); line-height: 1.8; }
+.wz-signoff b { color: var(--wz-ink); }
+
+.wz-dl-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding: 14px; background: linear-gradient(135deg, var(--wz-pastel) 0%, #F1F7FD 100%); border: 1px solid var(--wz-accent-soft); border-radius: 10px; }
+.wz-dl-bar .wz-lbl { font-weight: 600; color: var(--wz-accent-strong); margin-right: 6px; display: flex; align-items: center; }
+.wz-toast { position: fixed; right: 20px; bottom: 20px; padding: 10px 16px; background: var(--wz-ink); color: #FFFFFF; border-radius: 8px; font-size: 13px; box-shadow: 0 6px 20px rgba(15,42,68,0.20); opacity: 0; transform: translateY(8px); transition: opacity 180ms, transform 180ms; pointer-events: none; z-index: 1000; max-width: 360px; }
+.wz-toast.show { opacity: 1; transform: translateY(0); }
+.wz-toast.err { background: var(--wz-err); }
+.wz-toast.ok { background: var(--wz-ok); }
+.wz-toast.warn { background: var(--wz-warn); color: #FFFFFF; }
+
+.wz-tagrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.wz-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; background: var(--wz-pastel); color: var(--wz-accent-strong); border-radius: 999px; font-size: 11.5px; border: 1px solid var(--wz-accent-soft); font-weight: 500; }
+.wz-tag.removable { padding-right: 4px; }
+.wz-tag .wz-x { background: transparent; border: none; cursor: pointer; color: var(--wz-accent-strong); font-size: 14px; line-height: 1; padding: 0 4px; }
+.wz-tag .wz-x:hover { color: var(--wz-err); }
+
+.wz-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.wz-switch input { display: none; }
+.wz-switch .wz-track { width: 36px; height: 20px; background: var(--wz-pastel-2); border-radius: 999px; position: relative; transition: background 140ms; }
+.wz-switch .wz-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #FFFFFF; border-radius: 50%; transition: left 140ms; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.wz-switch input:checked + .wz-track { background: var(--wz-accent); }
+.wz-switch input:checked + .wz-track::after { left: 18px; }
+.wz-switch .wz-switch-lbl { font-size: 13px; color: var(--wz-ink-soft); }
+
+@media (max-width: 720px) {
+  .wz-root { padding: 12px 10px 40px; }
+  .wz-panel { padding: 16px 14px; }
+  .wz-step { min-width: 140px; }
+  .wz-step .wz-tag { font-size: 10px; }
+  .wz-step .wz-lbl { font-size: 12.5px; }
+}
+"""
+
+# ---------------------------------------------------------------------------
 # CDN libraries for client-side download (primary path)
 # ---------------------------------------------------------------------------
 
 CDN_SCRIPTS = """
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" referrerpolicy="no-referrer"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" referrerpolicy="no-referrer"></script>
+<script>
+  window.__WZ_CDN__ = {
+    mammoth: 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js',
+    pdfjs:   'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+    pdfjsWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+    jspdf:   'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
+    autotable: 'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js',
+    docx:    'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js',
+    htmlDocx: 'https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js'
+  };
+</script>
 """
 
 # ---------------------------------------------------------------------------
@@ -496,8 +672,1289 @@ OBSERVER_SCRIPT = r"""
 """
 
 # ---------------------------------------------------------------------------
+# Wizard script: upload, parse, reconcile, and download — all client-side
+# ---------------------------------------------------------------------------
+
+WIZARD_SCRIPT = r"""
+<script>
+(function(){
+  'use strict';
+  const CFG = window.__WZ_CFG__ || {};
+  const SECTORS = CFG.sectors || {};
+  const REGIONS = CFG.regions || ['USA', 'European Union', 'United Kingdom', 'Global'];
+  const BUILD = CFG.build || '';
+
+  const $ = (sel, el) => (el || document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
+  const el = (tag, attrs, children) => {
+    const n = document.createElement(tag);
+    if (attrs) for (const k in attrs) {
+      if (k === 'class') n.className = attrs[k];
+      else if (k === 'style') n.style.cssText = attrs[k];
+      else if (k.startsWith('on') && typeof attrs[k] === 'function') n.addEventListener(k.slice(2), attrs[k]);
+      else if (k === 'html') n.innerHTML = attrs[k];
+      else if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    }
+    if (children) (Array.isArray(children) ? children : [children]).forEach(c => { if (c == null) return; n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return n;
+  };
+
+  const STEPS = [
+    { id: 1, tag: 'Step 1', label: 'Scope & Jurisdiction' },
+    { id: 2, tag: 'Step 2', label: 'Upload Datasets' },
+    { id: 3, tag: 'Step 3', label: 'Matching Rules' },
+    { id: 4, tag: 'Step 4', label: 'Run Reconciliation' },
+    { id: 5, tag: 'Final',  label: 'Review & Download' },
+  ];
+
+  const state = {
+    step: 1,
+    scope: {
+      region: 'USA',
+      sector: 'Banking',
+      asOf: new Date().toISOString().slice(0, 10),
+      runId: genRunId(),
+      operator: '',
+      outputName: 'reconciliation',
+    },
+    left:  { files: [], tables: [], selectedTable: 0, records: [], sha256: null, status: 'empty' },
+    right: { files: [], tables: [], selectedTable: 0, records: [], sha256: null, status: 'empty' },
+    rules: {
+      keyFields: [],
+      amountFields: [],
+      tolerance: 0.01,
+      tolerancePct: 0,
+      dateTolerance: 1,
+      currencyMode: 'strict',
+      piiRedact: false,
+    },
+    result: null,
+    cdnStatus: {
+      XLSX: typeof XLSX !== 'undefined',
+      JSZip: typeof JSZip !== 'undefined',
+      mammoth: typeof mammoth !== 'undefined',
+      pdfjsLib: typeof pdfjsLib !== 'undefined',
+      jspdf: typeof (window.jspdf || {}).jsPDF !== 'undefined',
+      docx: typeof (window.docx || {}).Document !== 'undefined',
+      htmlDocx: typeof window.htmlDocx !== 'undefined',
+    },
+  };
+
+  // --- Lazy script loader ----------------------------------------------------
+  // Only SheetJS + JSZip are loaded eagerly (deferred) for fast first paint.
+  // Heavier libs load on demand when the user actually needs them.
+  const _loaded = {};
+  function loadScript(url) {
+    if (_loaded[url]) return _loaded[url];
+    _loaded[url] = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = url; s.async = true; s.referrerPolicy = 'no-referrer';
+      s.onload = () => resolve(true);
+      s.onerror = () => { delete _loaded[url]; reject(new Error('Failed to load ' + url)); };
+      document.head.appendChild(s);
+    });
+    return _loaded[url];
+  }
+  async function ensureSheetJS() {
+    if (typeof XLSX !== 'undefined') { state.cdnStatus.XLSX = true; return true; }
+    // SheetJS is deferred-eager; if still missing after short wait, give up
+    for (let i = 0; i < 20; i++) { if (typeof XLSX !== 'undefined') { state.cdnStatus.XLSX = true; return true; } await sleep(120); }
+    return false;
+  }
+  async function ensureJSZip() {
+    if (typeof JSZip !== 'undefined') { state.cdnStatus.JSZip = true; return true; }
+    for (let i = 0; i < 20; i++) { if (typeof JSZip !== 'undefined') { state.cdnStatus.JSZip = true; return true; } await sleep(120); }
+    return false;
+  }
+  async function ensureMammoth() {
+    if (typeof mammoth !== 'undefined') { state.cdnStatus.mammoth = true; return true; }
+    try { await loadScript(window.__WZ_CDN__.mammoth); state.cdnStatus.mammoth = typeof mammoth !== 'undefined'; if (!state.cdnStatus.mammoth) noteCdnBlocked('DOCX (mammoth)'); return state.cdnStatus.mammoth; } catch (e) { noteCdnBlocked('DOCX (mammoth)'); return false; }
+  }
+  async function ensurePdfJs() {
+    if (typeof pdfjsLib !== 'undefined') { state.cdnStatus.pdfjsLib = true; return true; }
+    try {
+      await loadScript(window.__WZ_CDN__.pdfjs);
+      if (typeof pdfjsLib !== 'undefined') {
+        try { pdfjsLib.GlobalWorkerOptions.workerSrc = window.__WZ_CDN__.pdfjsWorker; } catch (e) {}
+      }
+      state.cdnStatus.pdfjsLib = typeof pdfjsLib !== 'undefined';
+      if (!state.cdnStatus.pdfjsLib) noteCdnBlocked('PDF (pdf.js)');
+      return state.cdnStatus.pdfjsLib;
+    } catch (e) { noteCdnBlocked('PDF (pdf.js)'); return false; }
+  }
+  async function ensureJsPDF() {
+    if (((window.jspdf || {}).jsPDF)) { state.cdnStatus.jspdf = true; return true; }
+    try { await loadScript(window.__WZ_CDN__.jspdf); await loadScript(window.__WZ_CDN__.autotable); state.cdnStatus.jspdf = !!((window.jspdf || {}).jsPDF); if (!state.cdnStatus.jspdf) noteCdnBlocked('PDF output (jsPDF)'); return state.cdnStatus.jspdf; } catch (e) { noteCdnBlocked('PDF output (jsPDF)'); return false; }
+  }
+  async function ensureDocxJs() {
+    if (((window.docx || {}).Document)) { state.cdnStatus.docx = true; return true; }
+    try { await loadScript(window.__WZ_CDN__.docx); state.cdnStatus.docx = !!((window.docx || {}).Document); return state.cdnStatus.docx; } catch (e) { return false; }
+  }
+  async function ensureHtmlDocx() {
+    if (window.htmlDocx) { state.cdnStatus.htmlDocx = true; return true; }
+    try { await loadScript(window.__WZ_CDN__.htmlDocx); state.cdnStatus.htmlDocx = !!window.htmlDocx; if (!state.cdnStatus.htmlDocx && !state.cdnStatus.docx) noteCdnBlocked('DOCX output'); return state.cdnStatus.htmlDocx; } catch (e) { if (!state.cdnStatus.docx) noteCdnBlocked('DOCX output'); return false; }
+  }
+
+  function genRunId() {
+    const r = crypto && crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(4)) : [Math.random()*255, Math.random()*255, Math.random()*255, Math.random()*255];
+    return Array.from(r).map(b => (b & 255).toString(16).padStart(2, '0')).join('').slice(0, 8);
+  }
+
+  async function sha256Hex(buf) {
+    try {
+      const hash = await crypto.subtle.digest('SHA-256', buf);
+      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) { return null; }
+  }
+
+  function toast(msg, kind) {
+    const t = $('#wz-toast'); if (!t) return;
+    t.textContent = msg;
+    t.className = 'wz-toast show' + (kind ? ' ' + kind : '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function fmtNum(v) {
+    if (v == null || v === '') return '';
+    if (typeof v === 'number') return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const n = parseFloat(String(v).replace(/,/g, ''));
+    return isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(v);
+  }
+  function isAmountKey(k) { return /amount|qty|quantity|price|value|delta|variance|paid|allowed|charge|premium|reserve|total|net|gross|tax|balance|usage|kwh|billed|obligated|disbursed/i.test(k); }
+  function isIdKey(k) { return /id$|^id|ref$|number$|#$|code$|isin|lei|claim|trade|policy|account|subject|voucher|invoice|po|order|shipment|meter|subscriber/i.test(k); }
+
+  function renderStepper() {
+    const container = $('#wz-stepper'); if (!container) return;
+    container.innerHTML = '';
+    STEPS.forEach(s => {
+      const done = s.id < state.step;
+      const active = s.id === state.step;
+      const node = el('div', { class: 'wz-step' + (active ? ' active' : '') + (done ? ' done' : ''), onclick: () => { if (s.id < state.step) goto(s.id); } }, [
+        el('div', { class: 'wz-bullet' }, done ? '' : String(s.id)),
+        el('div', { class: 'wz-txt' }, [
+          el('span', { class: 'wz-tag' }, s.tag),
+          el('span', { class: 'wz-lbl' }, s.label),
+        ]),
+      ]);
+      container.appendChild(node);
+    });
+  }
+
+  function goto(step) {
+    state.step = Math.max(1, Math.min(5, step));
+    renderStepper();
+    renderBody();
+  }
+
+  function renderBody() {
+    const body = $('#wz-body'); if (!body) return;
+    body.innerHTML = '';
+    if (state.step === 1) body.appendChild(renderStep1());
+    if (state.step === 2) body.appendChild(renderStep2());
+    if (state.step === 3) body.appendChild(renderStep3());
+    if (state.step === 4) body.appendChild(renderStep4());
+    if (state.step === 5) body.appendChild(renderStep5());
+    autoHeight();
+  }
+
+  function renderCdnBanner() {
+    // Heavy libs load on demand — only show a banner if a lazy load has actually failed.
+    if (!state.cdnBlocked || !state.cdnBlocked.length) return null;
+    return el('div', { class: 'wz-banner warn', html:
+      '<div><b>CDN blocked for:</b> <i>' + esc(state.cdnBlocked.join(', ')) + '</i>. ' +
+      'CSV, TSV, and JSON still work natively; you can also download CSV results. For XLSX / DOCX / PPTX / PDF inputs or outputs, attach the files in chat and ask the assistant to reconcile — the server produces IBM-branded ooXML as a fallback.</div>'
+    });
+  }
+  function noteCdnBlocked(name) {
+    state.cdnBlocked = state.cdnBlocked || [];
+    if (state.cdnBlocked.indexOf(name) < 0) state.cdnBlocked.push(name);
+  }
+
+  // --- Step 1: Scope ---------------------------------------------------------
+  function renderStep1() {
+    const panel = el('div', { class: 'wz-panel' });
+    panel.appendChild(el('h2', {}, STEPS[0].tag + ' — ' + STEPS[0].label));
+    panel.appendChild(el('p', { class: 'wz-sub' }, 'Choose the regulatory region and industry. Defaults drive key/amount fields and regulation tags for the audit trail.'));
+    const banner = renderCdnBanner(); if (banner) panel.appendChild(banner);
+
+    const grid = el('div', { class: 'wz-grid' });
+    grid.appendChild(field('Region / Jurisdiction',
+      selectInput(REGIONS, state.scope.region, v => { state.scope.region = v; syncDefaults(); }),
+      'Regulation tags shown in the audit memo follow this jurisdiction.'
+    ));
+    grid.appendChild(field('Industry / Sector',
+      selectInput(Object.keys(SECTORS), state.scope.sector, v => { state.scope.sector = v; syncDefaults(); }),
+      'Select "Other" for sectors not listed. Defaults can be overridden in Step 3.'
+    ));
+    grid.appendChild(field('Reporting "as of" date',
+      inputNode('date', state.scope.asOf, v => state.scope.asOf = v),
+      'Shown in the header of every download.'
+    ));
+    grid.appendChild(field('Run ID (auto)',
+      inputNode('text', state.scope.runId, v => state.scope.runId = v, true),
+      'Immutable identifier stamped on every output for audit traceability.'
+    ));
+    grid.appendChild(field('Operator / Analyst',
+      inputNode('text', state.scope.operator, v => state.scope.operator = v, false, 'Name shown on sign-off block'),
+      'Appears in the sign-off footer of all downloads.'
+    ));
+    grid.appendChild(field('Output filename base',
+      inputNode('text', state.scope.outputName, v => state.scope.outputName = v),
+      'File downloads will be named "<base>_<asOf>.<ext>".'
+    ));
+    panel.appendChild(grid);
+
+    // Regulation tag preview
+    const defaults = SECTORS[state.scope.sector] || SECTORS['Other'];
+    const regs = (defaults && defaults.regulations && defaults.regulations[state.scope.region]) || [];
+    if (regs.length) {
+      const tagRow = el('div', { style: 'margin-top:18px;' });
+      tagRow.appendChild(el('label', { style: 'font-size:12.5px;font-weight:500;color:var(--wz-ink-soft);' }, 'Regulation tags (preview)'));
+      const row = el('div', { class: 'wz-tagrow' });
+      regs.forEach(r => row.appendChild(el('span', { class: 'wz-tag' }, r)));
+      tagRow.appendChild(row);
+      panel.appendChild(tagRow);
+    }
+
+    panel.appendChild(renderActions(false, true, 'Next — upload datasets'));
+    return panel;
+  }
+
+  function syncDefaults() {
+    const defaults = SECTORS[state.scope.sector] || SECTORS['Other'] || { key_fields: [], amount_fields: [] };
+    if (!state.rules.keyFields.length) state.rules.keyFields = (defaults.key_fields || []).slice();
+    if (!state.rules.amountFields.length) state.rules.amountFields = (defaults.amount_fields || []).slice();
+    state.rules.piiRedact = /healthcare|pharma/i.test(state.scope.sector);
+    renderBody();
+  }
+
+  function field(label, inputEl, hint) {
+    const f = el('div', { class: 'wz-field' });
+    f.appendChild(el('label', {}, label));
+    f.appendChild(inputEl);
+    if (hint) f.appendChild(el('div', { class: 'wz-hint' }, hint));
+    return f;
+  }
+  function inputNode(type, value, onchange, readonly, placeholder) {
+    const i = el('input', { class: 'wz-input', type: type, value: value || '', placeholder: placeholder || '' });
+    if (readonly) i.readOnly = true;
+    i.addEventListener('input', () => onchange(i.value));
+    return i;
+  }
+  function selectInput(options, value, onchange) {
+    const s = el('select', { class: 'wz-select' });
+    options.forEach(o => {
+      const opt = el('option', { value: o }, o);
+      if (o === value) opt.selected = true;
+      s.appendChild(opt);
+    });
+    s.addEventListener('change', () => onchange(s.value));
+    return s;
+  }
+
+  // --- Step 2: Upload --------------------------------------------------------
+  function renderStep2() {
+    const panel = el('div', { class: 'wz-panel' });
+    panel.appendChild(el('h2', {}, STEPS[1].tag + ' — ' + STEPS[1].label));
+    panel.appendChild(el('p', { class: 'wz-sub' }, 'Drop the two datasets you want to compare. Supported: CSV, TSV, XLSX, XLS, DOCX, PPTX, PDF, JSON. Each side accepts multiple files — we auto-detect tables.'));
+    const banner = renderCdnBanner(); if (banner) panel.appendChild(banner);
+
+    const grid = el('div', { class: 'wz-grid' });
+    grid.appendChild(renderDropZone('left', 'Left dataset', 'e.g. GL, blotter, policy ledger, 837 claims, EDC export, PO ledger'));
+    grid.appendChild(renderDropZone('right', 'Right dataset', 'e.g. custodian, clearing, claims feed, 835 remittance, CRO export, GRN'));
+    panel.appendChild(grid);
+
+    // Preview
+    ['left', 'right'].forEach(side => {
+      const s = state[side];
+      if (s.tables.length) panel.appendChild(renderTablePreview(side));
+    });
+
+    const canNext = state.left.records.length > 0 && state.right.records.length > 0;
+    panel.appendChild(renderActions(true, canNext, canNext ? 'Next — configure matching rules' : 'Upload both datasets to continue'));
+    return panel;
+  }
+
+  function renderDropZone(side, title, hint) {
+    const wrap = el('div', { class: 'wz-field' });
+    wrap.appendChild(el('label', {}, title));
+    const drop = el('label', { class: 'wz-drop' + (state[side].files.length ? ' wz-has-files' : '') });
+    drop.appendChild(el('div', { class: 'wz-icon' }, '+'));
+    drop.appendChild(el('div', { class: 'wz-title' }, state[side].files.length ? (state[side].files.length + ' file(s) loaded — click to add more') : 'Drop files here or click to browse'));
+    drop.appendChild(el('div', { class: 'wz-sub' }, hint));
+    drop.appendChild(el('span', { class: 'wz-browse' }, 'Browse files'));
+    const input = el('input', { type: 'file', multiple: 'multiple', accept: '.csv,.tsv,.xlsx,.xls,.docx,.pptx,.pdf,.json,.txt' });
+    input.addEventListener('change', e => handleFiles(side, e.target.files));
+    drop.appendChild(input);
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('wz-hover'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('wz-hover'));
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('wz-hover'); handleFiles(side, e.dataTransfer.files); });
+    wrap.appendChild(drop);
+
+    if (state[side].files.length) {
+      const list = el('div', { class: 'wz-filelist' });
+      state[side].files.forEach((f, idx) => {
+        const ext = (f.name.split('.').pop() || '').toLowerCase();
+        const row = el('div', { class: 'wz-file' }, [
+          el('span', { class: 'wz-ext' }, ext || 'bin'),
+          el('span', { class: 'wz-name' }, f.name + ' · ' + humanSize(f.size)),
+          el('span', { class: 'wz-status ' + (f.err ? 'err' : 'ok') }, f.err ? 'Error: ' + f.err : (f.tables ? f.tables.length + ' table(s)' : 'parsed')),
+          el('button', { class: 'wz-rem', onclick: () => { state[side].files.splice(idx, 1); recomputeTables(side); renderBody(); } }, '×'),
+        ]);
+        list.appendChild(row);
+      });
+      wrap.appendChild(list);
+    }
+    return wrap;
+  }
+
+  function humanSize(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+    return (b/1024/1024).toFixed(2) + ' MB';
+  }
+
+  async function handleFiles(side, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    toast('Parsing ' + files.length + ' file(s)…');
+    for (const f of files) {
+      const entry = { name: f.name, size: f.size, tables: null, err: null, sha256: null };
+      state[side].files.push(entry);
+      renderBody();
+      try {
+        const buf = await f.arrayBuffer();
+        entry.sha256 = await sha256Hex(buf);
+        const tables = await parseFile(f, buf);
+        if (!tables || !tables.length) throw new Error('No tabular data found in file');
+        entry.tables = tables;
+      } catch (e) {
+        entry.err = e.message || String(e);
+        toast('Failed to parse ' + f.name + ': ' + entry.err, 'err');
+      }
+    }
+    recomputeTables(side);
+    renderBody();
+  }
+
+  function recomputeTables(side) {
+    const all = [];
+    state[side].files.forEach(f => { if (f.tables) f.tables.forEach(t => all.push({ fileName: f.name, sha256: f.sha256, ...t })); });
+    state[side].tables = all;
+    state[side].selectedTable = 0;
+    state[side].records = all.length ? all[0].rows : [];
+    state[side].status = all.length ? 'parsed' : 'empty';
+    // Aggregate sha256 for multiple files
+    state[side].sha256 = state[side].files.map(f => f.sha256).filter(Boolean).join(',');
+  }
+
+  async function parseFile(file, buf) {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (ext === 'csv' || ext === 'tsv' || ext === 'txt') return parseCSVBuf(buf, ext === 'tsv' ? '\t' : (ext === 'txt' ? null : ','));
+    if (ext === 'json') return parseJSONBuf(buf);
+    if (ext === 'xlsx' || ext === 'xls') {
+      if (!(await ensureSheetJS())) throw new Error('SheetJS library unavailable (CDN blocked). Try CSV instead, or attach the file in chat for server-side parsing.');
+      return parseXLSXBuf(buf);
+    }
+    if (ext === 'docx') {
+      if (!(await ensureMammoth())) throw new Error('mammoth.js unavailable (CDN blocked). Export the tables to CSV, or attach the file in chat.');
+      return parseDOCXBuf(buf);
+    }
+    if (ext === 'pptx') {
+      if (!(await ensureJSZip())) throw new Error('JSZip unavailable (CDN blocked). Export the tables to CSV, or attach the file in chat.');
+      return parsePPTXBuf(buf);
+    }
+    if (ext === 'pdf') {
+      if (!(await ensurePdfJs())) throw new Error('pdf.js unavailable (CDN blocked). Export the tables to CSV, or attach the file in chat.');
+      return parsePDFBuf(buf);
+    }
+    throw new Error('Unsupported file extension: ' + ext);
+  }
+
+  function decodeBuf(buf) {
+    try { return new TextDecoder('utf-8', { fatal: false }).decode(buf); }
+    catch (e) { return new TextDecoder('latin1').decode(buf); }
+  }
+
+  function parseCSVBuf(buf, sep) {
+    const text = decodeBuf(buf);
+    if (sep == null) sep = (text.split('\n')[0].match(/\t/) ? '\t' : ',');
+    const rows = parseCSVText(text, sep);
+    if (rows.length < 2) return [];
+    const headers = rows[0];
+    const data = rows.slice(1).filter(r => r.length && r.some(c => c !== ''))
+      .map(r => { const o = {}; headers.forEach((h, i) => o[h || ('col' + (i+1))] = r[i] == null ? '' : r[i]); return o; });
+    return [{ name: 'data', rows: data }];
+  }
+
+  function parseCSVText(text, sep) {
+    const out = [];
+    let row = [], field = '', i = 0, inQ = false;
+    while (i < text.length) {
+      const c = text[i];
+      if (inQ) {
+        if (c === '"' && text[i+1] === '"') { field += '"'; i += 2; continue; }
+        if (c === '"') { inQ = false; i++; continue; }
+        field += c; i++; continue;
+      }
+      if (c === '"') { inQ = true; i++; continue; }
+      if (c === sep) { row.push(field); field = ''; i++; continue; }
+      if (c === '\n' || c === '\r') {
+        row.push(field); field = '';
+        if (row.length) out.push(row);
+        row = [];
+        if (c === '\r' && text[i+1] === '\n') i++;
+        i++; continue;
+      }
+      field += c; i++;
+    }
+    if (field.length || row.length) { row.push(field); out.push(row); }
+    return out;
+  }
+
+  function parseJSONBuf(buf) {
+    const text = decodeBuf(buf);
+    const obj = JSON.parse(text);
+    if (Array.isArray(obj)) return [{ name: 'records', rows: obj }];
+    if (obj && Array.isArray(obj.records)) return [{ name: 'records', rows: obj.records }];
+    if (obj && typeof obj === 'object') {
+      const out = [];
+      for (const k in obj) if (Array.isArray(obj[k])) out.push({ name: k, rows: obj[k] });
+      if (out.length) return out;
+    }
+    throw new Error('JSON must be an array or an object with array properties.');
+  }
+
+  function parseXLSXBuf(buf) {
+    const wb = XLSX.read(buf, { type: 'array' });
+    const out = [];
+    wb.SheetNames.forEach(name => {
+      const ws = wb.Sheets[name];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+      if (rows.length) out.push({ name: name, rows: rows });
+    });
+    return out;
+  }
+
+  async function parseDOCXBuf(buf) {
+    const result = await mammoth.convertToHtml({ arrayBuffer: buf });
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(result.value, 'text/html');
+    const tables = Array.from(doc.querySelectorAll('table'));
+    return tables.map((t, i) => ({ name: 'table_' + (i + 1), rows: tableEltToRecords(t) })).filter(x => x.rows.length);
+  }
+
+  function tableEltToRecords(tbl) {
+    const trs = Array.from(tbl.querySelectorAll('tr'));
+    if (!trs.length) return [];
+    const cellTxt = r => Array.from(r.querySelectorAll('th,td')).map(c => (c.textContent || '').trim());
+    const headers = cellTxt(trs[0]);
+    return trs.slice(1).map(r => {
+      const c = cellTxt(r);
+      const o = {};
+      headers.forEach((h, i) => o[h || ('col' + (i+1))] = c[i] == null ? '' : c[i]);
+      return o;
+    });
+  }
+
+  async function parsePPTXBuf(buf) {
+    const zip = await JSZip.loadAsync(buf);
+    const slideNames = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/i.test(n)).sort();
+    const out = [];
+    for (const n of slideNames) {
+      const xml = await zip.files[n].async('string');
+      const dom = new DOMParser().parseFromString(xml, 'application/xml');
+      const tables = Array.from(dom.getElementsByTagName('a:tbl'));
+      tables.forEach((tbl, idx) => {
+        const rows = Array.from(tbl.getElementsByTagName('a:tr')).map(tr =>
+          Array.from(tr.getElementsByTagName('a:tc')).map(tc =>
+            Array.from(tc.getElementsByTagName('a:t')).map(t => t.textContent || '').join(' ').trim()
+          )
+        );
+        if (rows.length > 1) {
+          const headers = rows[0];
+          const records = rows.slice(1).map(r => { const o = {}; headers.forEach((h, i) => o[h || ('col' + (i+1))] = r[i] || ''); return o; });
+          out.push({ name: n.replace(/^.*\//, '').replace('.xml', '') + (tables.length > 1 ? '_' + (idx + 1) : ''), rows: records });
+        }
+      });
+    }
+    return out;
+  }
+
+  async function parsePDFBuf(buf) {
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const allRows = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const byY = new Map();
+      content.items.forEach(it => {
+        const y = Math.round(it.transform[5]);
+        if (!byY.has(y)) byY.set(y, []);
+        byY.get(y).push({ x: it.transform[4], text: (it.str || '').trim() });
+      });
+      const ys = Array.from(byY.keys()).sort((a, b) => b - a);
+      ys.forEach(y => {
+        const cells = byY.get(y).sort((a, b) => a.x - b.x).map(c => c.text).filter(s => s);
+        if (cells.length > 1) allRows.push(cells);
+      });
+    }
+    if (allRows.length < 2) return [];
+    // Heuristic: first row with most columns wins as header
+    let headerIdx = 0, maxCols = 0;
+    allRows.forEach((r, i) => { if (r.length > maxCols) { maxCols = r.length; headerIdx = i; } });
+    const headers = allRows[headerIdx];
+    const rows = allRows.slice(headerIdx + 1)
+      .filter(r => r.length >= Math.max(2, Math.floor(maxCols / 2)))
+      .map(r => { const o = {}; headers.forEach((h, i) => o[h || ('col' + (i+1))] = r[i] == null ? '' : r[i]); return o; });
+    return rows.length ? [{ name: 'pdf_table', rows: rows, pdfNote: true }] : [];
+  }
+
+  function renderTablePreview(side) {
+    const s = state[side];
+    const box = el('div', { class: 'wz-preview' });
+    const header = el('header', {});
+    header.appendChild(el('span', {}, (side === 'left' ? 'Left' : 'Right') + ' — ' + s.records.length + ' records detected'));
+    if (s.tables.length > 1) {
+      const sel = el('div', { class: 'wz-tabselect' });
+      s.tables.forEach((t, i) => {
+        const tab = el('span', { class: 'wz-tab' + (i === s.selectedTable ? ' active' : ''), onclick: () => { s.selectedTable = i; s.records = s.tables[i].rows; renderBody(); } }, (t.fileName ? t.fileName + ' · ' : '') + t.name);
+        sel.appendChild(tab);
+      });
+      header.appendChild(sel);
+    }
+    box.appendChild(header);
+    const scrollDiv = el('div', { class: 'wz-scroll' });
+    const tbl = buildPreviewTable(s.records.slice(0, 8));
+    scrollDiv.appendChild(tbl);
+    box.appendChild(scrollDiv);
+    if (s.tables[s.selectedTable] && s.tables[s.selectedTable].pdfNote) {
+      box.appendChild(el('div', { class: 'wz-banner warn', style: 'margin:10px 14px;', html:
+        '<div>PDF table extraction is best-effort. If columns look misaligned, re-upload this side as CSV or XLSX for highest fidelity.</div>'
+      }));
+    }
+    return box;
+  }
+
+  function buildPreviewTable(rows) {
+    const tbl = el('table', {});
+    if (!rows.length) { tbl.appendChild(el('tbody', {}, el('tr', {}, el('td', {}, '(empty)')))); return tbl; }
+    const keys = Object.keys(rows[0]);
+    const thead = el('thead', {});
+    const trh = el('tr', {});
+    keys.forEach(k => trh.appendChild(el('th', {}, k)));
+    thead.appendChild(trh); tbl.appendChild(thead);
+    const tbody = el('tbody', {});
+    rows.forEach(r => {
+      const tr = el('tr', {});
+      keys.forEach(k => tr.appendChild(el('td', {}, String(r[k] == null ? '' : r[k]))));
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    return tbl;
+  }
+
+  // --- Step 3: Rules ---------------------------------------------------------
+  function renderStep3() {
+    const panel = el('div', { class: 'wz-panel' });
+    panel.appendChild(el('h2', {}, STEPS[2].tag + ' — ' + STEPS[2].label));
+    panel.appendChild(el('p', { class: 'wz-sub' }, 'We auto-detected candidate key and amount fields from your data. Refine them or accept defaults.'));
+
+    const lkeys = state.left.records.length ? Object.keys(state.left.records[0]) : [];
+    const rkeys = state.right.records.length ? Object.keys(state.right.records[0]) : [];
+    const commonKeys = lkeys.filter(k => rkeys.includes(k));
+
+    if (!state.rules.keyFields.length) {
+      const defaults = SECTORS[state.scope.sector] || SECTORS['Other'];
+      state.rules.keyFields = (defaults.key_fields || []).filter(k => commonKeys.includes(k));
+      if (!state.rules.keyFields.length) state.rules.keyFields = commonKeys.filter(isIdKey).slice(0, 2);
+      if (!state.rules.keyFields.length && commonKeys.length) state.rules.keyFields = [commonKeys[0]];
+    }
+    if (!state.rules.amountFields.length) {
+      const defaults = SECTORS[state.scope.sector] || SECTORS['Other'];
+      state.rules.amountFields = (defaults.amount_fields || []).filter(k => commonKeys.includes(k));
+      if (!state.rules.amountFields.length) state.rules.amountFields = commonKeys.filter(isAmountKey).slice(0, 3);
+    }
+
+    const grid = el('div', { class: 'wz-grid' });
+    grid.appendChild(field('Key fields (match identifier)',
+      multiTagSelect(commonKeys, state.rules.keyFields, list => state.rules.keyFields = list),
+      'Columns used to join left and right. Must exist on both sides.'
+    ));
+    grid.appendChild(field('Amount fields (numeric comparison)',
+      multiTagSelect(commonKeys, state.rules.amountFields, list => state.rules.amountFields = list),
+      'Numeric columns checked for variance using the tolerance below.'
+    ));
+    grid.appendChild(field('Absolute tolerance',
+      inputNode('number', String(state.rules.tolerance), v => state.rules.tolerance = parseFloat(v) || 0),
+      'Two amounts within this absolute difference are treated as a match.'
+    ));
+    grid.appendChild(field('Percent tolerance (optional)',
+      inputNode('number', String(state.rules.tolerancePct), v => state.rules.tolerancePct = parseFloat(v) || 0),
+      'Percent-of-nominal tolerance applied in addition to absolute.'
+    ));
+    grid.appendChild(field('Currency mode',
+      selectInput(['strict', 'ignore'], state.rules.currencyMode, v => state.rules.currencyMode = v),
+      '"strict" never nets across currencies; "ignore" compares numerics only.'
+    ));
+    grid.appendChild(field('PII redaction (HIPAA / GDPR)',
+      toggleInput(state.rules.piiRedact, v => state.rules.piiRedact = v, 'Mask names, DOB, and IDs in downloads'),
+      'Auto-enabled for Healthcare and Pharma/Clinical sectors.'
+    ));
+    panel.appendChild(grid);
+
+    const unmatchedLeft = state.rules.keyFields.filter(k => !lkeys.includes(k));
+    const unmatchedRight = state.rules.keyFields.filter(k => !rkeys.includes(k));
+    if (unmatchedLeft.length || unmatchedRight.length) {
+      panel.appendChild(el('div', { class: 'wz-banner err', html:
+        '<div>Key field(s) missing: ' +
+        (unmatchedLeft.length ? '<b>Left</b> is missing ' + esc(unmatchedLeft.join(', ')) + '. ' : '') +
+        (unmatchedRight.length ? '<b>Right</b> is missing ' + esc(unmatchedRight.join(', ')) + '.' : '') +
+        ' Pick columns present in both datasets.</div>'
+      }));
+    }
+
+    const canNext = state.rules.keyFields.length > 0 && !unmatchedLeft.length && !unmatchedRight.length;
+    panel.appendChild(renderActions(true, canNext, 'Run reconciliation'));
+    return panel;
+  }
+
+  function multiTagSelect(options, value, onchange) {
+    const wrap = el('div', {});
+    const row = el('div', { class: 'wz-tagrow' });
+    value.forEach((v, idx) => {
+      const tag = el('span', { class: 'wz-tag removable' }, [
+        v,
+        el('button', { class: 'wz-x', onclick: () => { value.splice(idx, 1); onchange(value); renderBody(); } }, '×'),
+      ]);
+      row.appendChild(tag);
+    });
+    wrap.appendChild(row);
+    const sel = el('select', { class: 'wz-select', style: 'margin-top:6px;' });
+    sel.appendChild(el('option', { value: '' }, '+ Add column…'));
+    options.filter(o => !value.includes(o)).forEach(o => sel.appendChild(el('option', { value: o }, o)));
+    sel.addEventListener('change', () => {
+      if (sel.value) { value.push(sel.value); onchange(value); renderBody(); }
+    });
+    wrap.appendChild(sel);
+    return wrap;
+  }
+
+  function toggleInput(checked, onchange, label) {
+    const w = el('label', { class: 'wz-switch', style: 'margin-top:8px;' });
+    const inp = el('input', { type: 'checkbox' }); inp.checked = !!checked;
+    inp.addEventListener('change', () => onchange(inp.checked));
+    w.appendChild(inp);
+    w.appendChild(el('span', { class: 'wz-track' }));
+    w.appendChild(el('span', { class: 'wz-switch-lbl' }, label || (checked ? 'On' : 'Off')));
+    return w;
+  }
+
+  // --- Step 4: Run -----------------------------------------------------------
+  function renderStep4() {
+    const panel = el('div', { class: 'wz-panel' });
+    panel.appendChild(el('h2', {}, STEPS[3].tag + ' — ' + STEPS[3].label));
+    panel.appendChild(el('p', { class: 'wz-sub' }, 'Deterministic match on ' + esc(state.rules.keyFields.join(' + ')) + ' with variance check on ' + (state.rules.amountFields.length ? esc(state.rules.amountFields.join(', ')) : 'no amount fields') + '.'));
+
+    const progWrap = el('div', {});
+    const phases = ['Normalising', 'Indexing right side', 'Matching left→right', 'Variance check', 'Redaction & summary'];
+    const rows = phases.map(() => {
+      const row = el('div', { class: 'wz-progress-row' });
+      row.appendChild(el('span', { class: 'wz-lbl' }, ''));
+      const bar = el('div', { class: 'wz-progress' }, el('div', { class: 'wz-progress-bar' }));
+      row.appendChild(bar);
+      row.appendChild(el('span', { class: 'wz-val' }, '0%'));
+      progWrap.appendChild(row);
+      return row;
+    });
+    rows.forEach((r, i) => $('.wz-lbl', r).textContent = phases[i]);
+    panel.appendChild(progWrap);
+
+    const runBtn = el('button', { class: 'wz-btn', style: 'margin-top:16px;', onclick: () => runReconcile(rows) }, 'Start reconciliation');
+    panel.appendChild(el('div', { style: 'margin-top:14px;' }, runBtn));
+
+    panel.appendChild(renderActions(true, !!state.result, state.result ? 'Next — review & download' : 'Run to continue'));
+    return panel;
+  }
+
+  async function runReconcile(rows) {
+    const setPhase = (i, pct) => {
+      const bar = $('.wz-progress-bar', rows[i]);
+      const val = $('.wz-val', rows[i]);
+      bar.style.width = pct + '%';
+      val.textContent = pct + '%';
+    };
+    try {
+      for (let i = 0; i < rows.length; i++) setPhase(i, 0);
+      setPhase(0, 20);
+      const left = state.left.records.slice();
+      const right = state.right.records.slice();
+      await sleep(40);
+      setPhase(0, 100);
+
+      setPhase(1, 30);
+      const kf = state.rules.keyFields;
+      const af = state.rules.amountFields;
+      const tol = state.rules.tolerance;
+      const tolPct = state.rules.tolerancePct;
+      const rightIdx = new Map();
+      right.forEach((r, idx) => {
+        const k = keyOf(r, kf);
+        if (!rightIdx.has(k)) rightIdx.set(k, []);
+        rightIdx.get(k).push(idx);
+      });
+      setPhase(1, 100);
+
+      setPhase(2, 10);
+      const used = new Set();
+      const matched = [], variance = [], unmatchedLeft = [];
+      for (let i = 0; i < left.length; i++) {
+        const lrec = left[i];
+        const k = keyOf(lrec, kf);
+        const cands = rightIdx.get(k) || [];
+        let picked = -1;
+        for (const ri of cands) { if (!used.has(ri)) { picked = ri; break; } }
+        if (picked < 0) { unmatchedLeft.push(lrec); continue; }
+        used.add(picked);
+        const rrec = right[picked];
+        const diffs = {};
+        for (const f of af) {
+          const lv = toNum(lrec[f]);
+          const rv = toNum(rrec[f]);
+          if (lv == null && rv == null) continue;
+          if (lv == null || rv == null) { diffs[f] = { left: lv, right: rv, delta: null }; continue; }
+          const abs = Math.abs(lv - rv);
+          const pctOk = tolPct > 0 && Math.max(Math.abs(lv), Math.abs(rv)) > 0 && (abs / Math.max(Math.abs(lv), Math.abs(rv)) * 100) <= tolPct;
+          if (abs > tol && !pctOk) diffs[f] = { left: lv, right: rv, delta: Math.round((rv - lv) * 10000) / 10000 };
+        }
+        if (Object.keys(diffs).length) {
+          const row = { _key: k };
+          for (const kk in lrec) row[kk] = lrec[kk];
+          for (const ff in diffs) { row[ff + '_left'] = diffs[ff].left; row[ff + '_right'] = diffs[ff].right; row[ff + '_delta'] = diffs[ff].delta; }
+          variance.push(row);
+        } else {
+          matched.push(lrec);
+        }
+        if (i % 200 === 0) { setPhase(2, Math.min(99, 10 + Math.round((i / Math.max(1, left.length)) * 85))); await sleep(0); }
+      }
+      setPhase(2, 100);
+
+      setPhase(3, 50);
+      const unmatchedRight = right.filter((_, idx) => !used.has(idx));
+      setPhase(3, 100);
+
+      setPhase(4, 40);
+      let redLeft = unmatchedLeft, redRight = unmatchedRight, redVar = variance, redMat = matched;
+      if (state.rules.piiRedact) {
+        redLeft = redactPII(unmatchedLeft);
+        redRight = redactPII(unmatchedRight);
+        redVar = redactPII(variance);
+        redMat = redactPII(matched);
+      }
+      const total = matched.length + variance.length + unmatchedLeft.length;
+      const match_rate = total ? Math.round((matched.length / total) * 10000) / 100 : 0;
+      state.result = {
+        matched: redMat, variance: redVar,
+        unmatched_left: redLeft, unmatched_right: redRight,
+        stats: {
+          total_left: left.length, total_right: right.length,
+          matched: matched.length, variance: variance.length,
+          unmatched_left: unmatchedLeft.length, unmatched_right: unmatchedRight.length,
+          match_rate: match_rate,
+        },
+        ranAt: new Date().toISOString(),
+      };
+      setPhase(4, 100);
+      await sleep(120);
+      toast('Reconciliation complete — ' + match_rate + '% match rate', 'ok');
+      goto(5);
+    } catch (e) {
+      console.error(e);
+      toast('Reconciliation failed: ' + (e.message || String(e)), 'err');
+    }
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  function keyOf(rec, kf) { return kf.map(k => normStr(rec[k])).join('||'); }
+  function normStr(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase(); }
+  function toNum(v) {
+    if (v == null || v === '') return null;
+    const n = parseFloat(String(v).replace(/,/g, '').replace(/[^0-9.\-]/g, ''));
+    return isFinite(n) ? n : null;
+  }
+
+  function redactPII(rows) {
+    const nameKeys = /(patient.?name|insured|policyholder|subject.?name|patientfullname|full.?name)/i;
+    const dobKeys = /(patient.?dob|dob|birth.?date|date.?of.?birth)/i;
+    const idKeys = /(ssn|social|member.?id|patient.?id|mrn|national.?id)/i;
+    return rows.map(r => {
+      const o = {};
+      for (const k in r) {
+        const v = r[k];
+        if (nameKeys.test(k) && v) {
+          const parts = String(v).trim().split(/[\s,]+/);
+          o[k] = parts.map(p => p ? p[0] + '.' : '').join(' ') || '***';
+        } else if (dobKeys.test(k) && v) {
+          const s = String(v); o[k] = s.length >= 4 ? s.slice(0, 4) + '-**-**' : '****';
+        } else if (idKeys.test(k) && v) {
+          const s = String(v); o[k] = s.length > 5 ? s.slice(0, 3) + '***' + s.slice(-2) : '***';
+        } else {
+          o[k] = v;
+        }
+      }
+      return o;
+    });
+  }
+
+  // --- Step 5: Review & Download --------------------------------------------
+  function renderStep5() {
+    const panel = el('div', { class: 'wz-panel' });
+    panel.appendChild(el('h2', {}, STEPS[4].tag + ' — ' + STEPS[4].label));
+    if (!state.result) {
+      panel.appendChild(el('div', { class: 'wz-banner warn' }, 'Reconciliation has not been run yet. Go back to Step 4.'));
+      panel.appendChild(renderActions(true, false, 'Run first'));
+      return panel;
+    }
+    const r = state.result, s = r.stats;
+    panel.appendChild(el('p', { class: 'wz-sub' }, 'Reconciliation complete. Downloads are generated in your browser; outputs include the run ID, SHA-256 of both inputs, operator name, timestamp, and regulation tags for audit traceability.'));
+
+    // Regulation tags
+    const regs = ((SECTORS[state.scope.sector] || SECTORS['Other'] || {}).regulations || {})[state.scope.region] || [];
+    if (regs.length) {
+      const tagRow = el('div', { class: 'wz-tagrow', style: 'margin-bottom:12px;' });
+      regs.forEach(t => tagRow.appendChild(el('span', { class: 'wz-tag' }, t)));
+      panel.appendChild(tagRow);
+    }
+
+    // KPIs
+    const kpis = el('div', { class: 'wz-kpis' });
+    const kpi = (v, l, cls) => { const k = el('div', { class: 'wz-kpi ' + (cls || '') }); k.appendChild(el('div', { class: 'v' }, fmtNum(v))); k.appendChild(el('div', { class: 'l' }, l)); return k; };
+    kpis.appendChild(kpi(s.match_rate + '%', 'Match rate', s.match_rate >= 95 ? 'ok' : (s.match_rate >= 80 ? 'warn' : 'err')));
+    kpis.appendChild(kpi(s.total_left, 'Records · Left'));
+    kpis.appendChild(kpi(s.total_right, 'Records · Right'));
+    kpis.appendChild(kpi(s.matched, 'Matched', 'ok'));
+    kpis.appendChild(kpi(s.variance, 'Variance', 'warn'));
+    kpis.appendChild(kpi(s.unmatched_left, 'Missing · Right', s.unmatched_left > 0 ? 'err' : ''));
+    kpis.appendChild(kpi(s.unmatched_right, 'Missing · Left', s.unmatched_right > 0 ? 'err' : ''));
+    panel.appendChild(kpis);
+
+    // Download bar
+    const dl = el('div', { class: 'wz-dl-bar' });
+    dl.appendChild(el('span', { class: 'wz-lbl' }, 'Download reconciled output:'));
+    dl.appendChild(el('button', { class: 'wz-btn', onclick: () => downloadXLSX() }, 'XLSX'));
+    dl.appendChild(el('button', { class: 'wz-btn wz-secondary', onclick: () => downloadCSV() }, 'CSV (exceptions)'));
+    dl.appendChild(el('button', { class: 'wz-btn wz-secondary', onclick: () => downloadPDF() }, 'PDF (audit memo)'));
+    dl.appendChild(el('button', { class: 'wz-btn wz-secondary', onclick: () => downloadDOCX() }, 'DOCX (narrative)'));
+    dl.appendChild(el('button', { class: 'wz-btn wz-ghost', onclick: () => downloadJSON() }, 'JSON'));
+    panel.appendChild(dl);
+
+    // Tables
+    if (r.variance.length) panel.appendChild(renderResultTable('Variances — amount mismatches', r.variance));
+    if (r.unmatched_left.length) panel.appendChild(renderResultTable('Missing in Right (left-only)', r.unmatched_left));
+    if (r.unmatched_right.length) panel.appendChild(renderResultTable('Missing in Left (right-only)', r.unmatched_right));
+    if (r.matched.length) panel.appendChild(renderResultTable('Matched (first 25)', r.matched.slice(0, 25)));
+
+    // Sign-off block
+    const sign = el('div', { class: 'wz-signoff' });
+    sign.innerHTML = [
+      '<b>Run ID:</b> ' + esc(state.scope.runId),
+      '<b>Timestamp:</b> ' + esc(r.ranAt),
+      '<b>Operator:</b> ' + esc(state.scope.operator || '—'),
+      '<b>Sector / Region:</b> ' + esc(state.scope.sector) + ' · ' + esc(state.scope.region),
+      '<b>As of:</b> ' + esc(state.scope.asOf),
+      '<b>Key fields:</b> ' + esc(state.rules.keyFields.join(' + ')),
+      '<b>Amount fields:</b> ' + esc(state.rules.amountFields.join(', ') || '—'),
+      '<b>Tolerance:</b> abs ' + state.rules.tolerance + (state.rules.tolerancePct ? ' · pct ' + state.rules.tolerancePct + '%' : ''),
+      '<b>Left SHA-256:</b> ' + esc(state.left.sha256 || '—'),
+      '<b>Right SHA-256:</b> ' + esc(state.right.sha256 || '—'),
+      '<b>Regulation tags:</b> ' + esc(regs.join(', ') || '—'),
+      '<b>PII redaction:</b> ' + (state.rules.piiRedact ? 'applied' : 'not applied'),
+      '<b>Build:</b> ' + esc(BUILD),
+    ].join('<br>');
+    panel.appendChild(sign);
+
+    panel.appendChild(renderActions(true, false, null, true));
+    return panel;
+  }
+
+  function renderResultTable(title, rows) {
+    const box = el('div', { class: 'wz-tbl-wrap' });
+    const h = el('header', {});
+    h.appendChild(el('span', {}, title));
+    h.appendChild(el('span', { class: 'wz-count' }, rows.length + ' row' + (rows.length === 1 ? '' : 's')));
+    box.appendChild(h);
+    const scrollDiv = el('div', { class: 'wz-scroll' });
+    if (!rows.length) {
+      scrollDiv.appendChild(el('div', { style: 'padding:14px;color:var(--wz-muted);' }, 'None.'));
+    } else {
+      const keys = Object.keys(rows[0]);
+      const tbl = el('table', {});
+      const trh = el('tr', {});
+      keys.forEach(k => trh.appendChild(el('th', { class: isAmountKey(k) ? 'num' : '' }, k)));
+      tbl.appendChild(el('thead', {}, trh));
+      const tb = el('tbody', {});
+      rows.slice(0, 200).forEach(row => {
+        const tr = el('tr', {});
+        keys.forEach(k => {
+          const v = row[k];
+          let cls = isAmountKey(k) ? 'num' : '';
+          if (/_delta$/.test(k)) { const n = parseFloat(v); if (isFinite(n)) cls += (n < 0 ? ' delta-neg' : (n > 0 ? ' delta-pos' : '')); }
+          tr.appendChild(el('td', { class: cls }, isAmountKey(k) ? fmtNum(v) : (v == null ? '' : String(v))));
+        });
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      scrollDiv.appendChild(tbl);
+    }
+    box.appendChild(scrollDiv);
+    return box;
+  }
+
+  // --- Actions bar -----------------------------------------------------------
+  function renderActions(showBack, canNext, nextLabel, isFinal) {
+    const bar = el('div', { class: 'wz-actions' });
+    const left = el('div', {});
+    if (showBack) left.appendChild(el('button', { class: 'wz-btn wz-ghost', onclick: () => goto(state.step - 1) }, '← Back'));
+    bar.appendChild(left);
+    const right = el('div', { style: 'display:flex;gap:10px;align-items:center;' });
+    if (isFinal) {
+      right.appendChild(el('button', { class: 'wz-btn wz-secondary', onclick: () => { if (confirm('Start a new reconciliation? Current results will be cleared.')) resetAll(); } }, 'Start new run'));
+    } else if (nextLabel) {
+      const btn = el('button', { class: 'wz-btn', onclick: () => { if (canNext) goto(state.step + 1); } }, nextLabel);
+      if (!canNext) btn.disabled = true;
+      right.appendChild(btn);
+    }
+    bar.appendChild(right);
+    return bar;
+  }
+
+  function resetAll() {
+    state.step = 1;
+    state.left = { files: [], tables: [], selectedTable: 0, records: [], sha256: null, status: 'empty' };
+    state.right = { files: [], tables: [], selectedTable: 0, records: [], sha256: null, status: 'empty' };
+    state.result = null;
+    state.scope.runId = genRunId();
+    state.rules.keyFields = []; state.rules.amountFields = [];
+    renderStepper(); renderBody();
+  }
+
+  // --- Download generators ---------------------------------------------------
+  function baseName() { return (state.scope.outputName || 'reconciliation') + '_' + state.scope.asOf.replace(/-/g, ''); }
+
+  function downloadBlob(name, mime, data) {
+    const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = el('a', { href: url, download: name });
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 400);
+  }
+
+  function downloadCSV() {
+    try {
+      const parts = [];
+      const add = (title, rows) => {
+        parts.push('# ' + title);
+        if (!rows.length) { parts.push(''); return; }
+        const keys = Object.keys(rows[0]);
+        parts.push(keys.map(csvCell).join(','));
+        rows.forEach(r => parts.push(keys.map(k => csvCell(r[k])).join(',')));
+        parts.push('');
+      };
+      const r = state.result;
+      add('Summary', [Object.assign({ run_id: state.scope.runId, operator: state.scope.operator, asOf: state.scope.asOf, sector: state.scope.sector, region: state.scope.region }, r.stats)]);
+      add('Variance', r.variance);
+      add('Missing_in_Right', r.unmatched_left);
+      add('Missing_in_Left', r.unmatched_right);
+      add('Matched (first 500)', r.matched.slice(0, 500));
+      downloadBlob(baseName() + '.csv', 'text/csv', parts.join('\n'));
+      toast('CSV downloaded', 'ok');
+    } catch (e) { toast('CSV failed: ' + e.message, 'err'); }
+  }
+  function csvCell(v) {
+    const s = v == null ? '' : String(v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function downloadJSON() {
+    try {
+      const payload = {
+        meta: { runId: state.scope.runId, operator: state.scope.operator, asOf: state.scope.asOf, sector: state.scope.sector, region: state.scope.region, keyFields: state.rules.keyFields, amountFields: state.rules.amountFields, tolerance: state.rules.tolerance, leftSHA256: state.left.sha256, rightSHA256: state.right.sha256, build: BUILD },
+        result: state.result,
+      };
+      downloadBlob(baseName() + '.json', 'application/json', JSON.stringify(payload, null, 2));
+      toast('JSON downloaded', 'ok');
+    } catch (e) { toast('JSON failed: ' + e.message, 'err'); }
+  }
+
+  async function downloadXLSX() {
+    if (!(await ensureSheetJS())) { toast('XLSX library unavailable — download CSV instead, or attach files in chat for server-side ooXML', 'err'); return; }
+    try {
+      const wb = XLSX.utils.book_new();
+      const regs = ((SECTORS[state.scope.sector] || SECTORS['Other'] || {}).regulations || {})[state.scope.region] || [];
+      const summary = [
+        ['IBM Consulting Advantage — AI Reconciliation'],
+        [],
+        ['Sector', state.scope.sector],
+        ['Region', state.scope.region],
+        ['As of', state.scope.asOf],
+        ['Run ID', state.scope.runId],
+        ['Operator', state.scope.operator || '—'],
+        ['Timestamp', state.result.ranAt],
+        ['Left SHA-256', state.left.sha256 || '—'],
+        ['Right SHA-256', state.right.sha256 || '—'],
+        ['Key fields', state.rules.keyFields.join(' + ')],
+        ['Amount fields', state.rules.amountFields.join(', ')],
+        ['Absolute tolerance', state.rules.tolerance],
+        ['Percent tolerance', state.rules.tolerancePct],
+        ['PII redaction', state.rules.piiRedact ? 'applied' : 'not applied'],
+        ['Regulation tags', regs.join(', ')],
+        ['Build', BUILD],
+        [],
+        ['KPI', 'Value'],
+      ];
+      const s = state.result.stats;
+      Object.keys(s).forEach(k => summary.push([k, s[k]]));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'Summary');
+      const secs = [['Variance', state.result.variance], ['Missing_in_Right', state.result.unmatched_left], ['Missing_in_Left', state.result.unmatched_right], ['Matched', state.result.matched]];
+      secs.forEach(([name, rows]) => {
+        if (!rows.length) return;
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name.slice(0, 31));
+      });
+      XLSX.writeFile(wb, baseName() + '.xlsx');
+      toast('XLSX downloaded', 'ok');
+    } catch (e) { toast('XLSX failed: ' + e.message, 'err'); }
+  }
+
+  async function downloadPDF() {
+    if (!(await ensureJsPDF())) { toast('PDF library unavailable — try XLSX or CSV, or attach files in chat', 'err'); return; }
+    const jsPDFCtor = (window.jspdf || {}).jsPDF;
+    try {
+      const doc = new jsPDFCtor({ orientation: 'p', unit: 'pt', format: 'a4' });
+      const NAVY = '#002D74';
+      const regs = ((SECTORS[state.scope.sector] || SECTORS['Other'] || {}).regulations || {})[state.scope.region] || [];
+      doc.setFillColor(NAVY); doc.rect(0, 0, doc.internal.pageSize.getWidth(), 70, 'F');
+      doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+      doc.text('IBM Consulting Advantage — AI Reconciliation', 36, 30);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+      doc.text(state.scope.sector + ' · ' + state.scope.region + ' · As of ' + state.scope.asOf + ' · Run ' + state.scope.runId, 36, 50);
+
+      let y = 92;
+      doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text('Summary', 36, y); y += 12;
+      const s = state.result.stats;
+      const sumRows = [
+        ['Match rate', s.match_rate + '%'],
+        ['Total · Left', String(s.total_left)],
+        ['Total · Right', String(s.total_right)],
+        ['Matched', String(s.matched)],
+        ['Variance', String(s.variance)],
+        ['Missing in Right', String(s.unmatched_left)],
+        ['Missing in Left', String(s.unmatched_right)],
+        ['Operator', state.scope.operator || '—'],
+        ['Timestamp', state.result.ranAt],
+        ['Regulation tags', regs.join(', ') || '—'],
+      ];
+      if (doc.autoTable) {
+        doc.autoTable({ startY: y, head: [['Field', 'Value']], body: sumRows, theme: 'grid', styles: { fontSize: 9 }, headStyles: { fillColor: NAVY, textColor: 255 }, margin: { left: 36, right: 36 } });
+        y = doc.lastAutoTable.finalY + 14;
+      }
+
+      const tableSection = (title, rows) => {
+        if (!rows.length || !doc.autoTable) return;
+        if (y > 700) { doc.addPage(); y = 60; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(title + ' (' + rows.length + ')', 36, y); y += 8;
+        const keys = Object.keys(rows[0]).slice(0, 6);
+        const body = rows.slice(0, 60).map(r => keys.map(k => (r[k] == null ? '' : String(r[k])).slice(0, 40)));
+        doc.autoTable({ startY: y, head: [keys], body: body, theme: 'striped', styles: { fontSize: 7.5, cellPadding: 3 }, headStyles: { fillColor: NAVY, textColor: 255 }, margin: { left: 36, right: 36 } });
+        y = doc.lastAutoTable.finalY + 14;
+      };
+      tableSection('Variances', state.result.variance);
+      tableSection('Missing in Right', state.result.unmatched_left);
+      tableSection('Missing in Left', state.result.unmatched_right);
+
+      // Sign-off
+      if (y > 720) { doc.addPage(); y = 60; }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('Sign-off', 36, y); y += 10;
+      doc.setFont('courier', 'normal'); doc.setFontSize(8);
+      const sign = [
+        'Run ID: ' + state.scope.runId,
+        'Left SHA-256: ' + (state.left.sha256 || '—').slice(0, 64),
+        'Right SHA-256: ' + (state.right.sha256 || '—').slice(0, 64),
+        'Key fields: ' + state.rules.keyFields.join(' + '),
+        'Tolerance (abs/pct): ' + state.rules.tolerance + ' / ' + state.rules.tolerancePct,
+        'PII redaction: ' + (state.rules.piiRedact ? 'applied' : 'not applied'),
+        'Build: ' + BUILD,
+      ];
+      sign.forEach(line => { doc.text(line, 36, y); y += 11; });
+      doc.save(baseName() + '.pdf');
+      toast('PDF downloaded', 'ok');
+    } catch (e) { toast('PDF failed: ' + e.message, 'err'); }
+  }
+
+  async function downloadDOCX() {
+    // Prefer docx.js; fallback to html-docx-js; both load on demand.
+    if (await ensureDocxJs()) {
+      try { buildDocxJs(window.docx); return; } catch (e) { console.warn('docx.js failed, falling back', e); }
+    }
+    if (await ensureHtmlDocx()) {
+      try { buildDocxHtml(); return; } catch (e) { console.warn(e); }
+    }
+    toast('DOCX library unavailable — try XLSX or PDF, or attach files in chat', 'err');
+  }
+
+  function buildDocxJs(dx) {
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel, AlignmentType, WidthType, BorderStyle } = dx;
+    const NAVY = '002D74';
+    const regs = ((SECTORS[state.scope.sector] || SECTORS['Other'] || {}).regulations || {})[state.scope.region] || [];
+    const header = new Paragraph({ children: [new TextRun({ text: 'IBM Consulting Advantage — AI Reconciliation', bold: true, size: 36, color: NAVY })] });
+    const sub = new Paragraph({ children: [new TextRun({ text: state.scope.sector + ' · ' + state.scope.region + ' · As of ' + state.scope.asOf + ' · Run ' + state.scope.runId, size: 20, color: '525252' })] });
+    const s = state.result.stats;
+    const kpis = new Paragraph({ children: [new TextRun({ text: 'Match rate: ' + s.match_rate + '% · Matched: ' + s.matched + ' · Variance: ' + s.variance + ' · Missing-R: ' + s.unmatched_left + ' · Missing-L: ' + s.unmatched_right, size: 20 })] });
+    const regTags = new Paragraph({ children: [new TextRun({ text: 'Regulation tags: ' + (regs.join(', ') || '—'), size: 18, color: '525252' })] });
+
+    const makeTable = (title, rows) => {
+      if (!rows.length) return null;
+      const keys = Object.keys(rows[0]).slice(0, 8);
+      const mkCell = (text, head) => new TableCell({
+        width: { size: 100 / keys.length * 100, type: WidthType.DXA },
+        shading: head ? { fill: NAVY } : undefined,
+        children: [new Paragraph({ children: [new TextRun({ text: String(text == null ? '' : text).slice(0, 120), bold: !!head, color: head ? 'FFFFFF' : '000000', size: 16 })] })],
+      });
+      const headRow = new TableRow({ children: keys.map(k => mkCell(k, true)) });
+      const dataRows = rows.slice(0, 40).map(r => new TableRow({ children: keys.map(k => mkCell(r[k], false)) }));
+      return [new Paragraph({ text: title + ' (' + rows.length + ')', heading: HeadingLevel.HEADING_2 }), new Table({ rows: [headRow, ...dataRows], width: { size: 100, type: WidthType.PERCENTAGE } })];
+    };
+    const sections = [header, sub, kpis, regTags];
+    [['Variances', state.result.variance], ['Missing in Right', state.result.unmatched_left], ['Missing in Left', state.result.unmatched_right]].forEach(([t, rows]) => {
+      const tbl = makeTable(t, rows); if (tbl) sections.push(...tbl);
+    });
+    sections.push(new Paragraph({ text: 'Sign-off', heading: HeadingLevel.HEADING_2 }));
+    [
+      'Run ID: ' + state.scope.runId,
+      'Operator: ' + (state.scope.operator || '—'),
+      'Timestamp: ' + state.result.ranAt,
+      'Left SHA-256: ' + (state.left.sha256 || '—'),
+      'Right SHA-256: ' + (state.right.sha256 || '—'),
+      'Key fields: ' + state.rules.keyFields.join(' + '),
+      'Tolerance: abs ' + state.rules.tolerance + ' / pct ' + state.rules.tolerancePct,
+      'PII redaction: ' + (state.rules.piiRedact ? 'applied' : 'not applied'),
+      'Build: ' + BUILD,
+    ].forEach(line => sections.push(new Paragraph({ children: [new TextRun({ text: line, size: 16, font: 'Consolas', color: '3B5472' })] })));
+
+    const doc = new Document({ sections: [{ children: sections }] });
+    Packer.toBlob(doc).then(blob => { downloadBlob(baseName() + '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', blob); toast('DOCX downloaded', 'ok'); });
+  }
+
+  function buildDocxHtml() {
+    const NAVY = '#002D74';
+    const regs = ((SECTORS[state.scope.sector] || SECTORS['Other'] || {}).regulations || {})[state.scope.region] || [];
+    const tbl = (title, rows) => {
+      if (!rows.length) return '';
+      const keys = Object.keys(rows[0]).slice(0, 8);
+      const th = keys.map(k => '<th style="background:' + NAVY + ';color:#fff;padding:6px;border:1px solid #666;">' + esc(k) + '</th>').join('');
+      const tr = rows.slice(0, 40).map(r => '<tr>' + keys.map(k => '<td style="padding:6px;border:1px solid #ccc;font-size:11px;">' + esc(String(r[k] == null ? '' : r[k])) + '</td>').join('') + '</tr>').join('');
+      return '<h3 style="color:' + NAVY + ';">' + esc(title) + ' (' + rows.length + ')</h3><table style="border-collapse:collapse;width:100%;">' + th + tr + '</table>';
+    };
+    const html = '<!DOCTYPE html><html><body style="font-family:Segoe UI,Arial;color:#161616;">' +
+      '<div style="background:' + NAVY + ';color:#fff;padding:16px;"><h1 style="margin:0;">IBM Consulting Advantage — AI Reconciliation</h1><div style="opacity:.85;font-size:12px;">' + esc(state.scope.sector + ' · ' + state.scope.region + ' · ' + state.scope.asOf) + '</div></div>' +
+      '<p>Regulation tags: ' + esc(regs.join(', ') || '—') + '</p>' +
+      tbl('Variances', state.result.variance) + tbl('Missing in Right', state.result.unmatched_left) + tbl('Missing in Left', state.result.unmatched_right) +
+      '</body></html>';
+    const blob = window.htmlDocx.asBlob(html);
+    downloadBlob(baseName() + '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', blob);
+    toast('DOCX downloaded (html-docx fallback)', 'ok');
+  }
+
+  // --- Height autosize -------------------------------------------------------
+  function autoHeight() {
+    try {
+      const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+      window.parent.postMessage({ type: 'iframe:resize', height: h }, '*');
+    } catch (e) {}
+  }
+
+  // --- Boot ------------------------------------------------------------------
+  function boot() {
+    renderStepper();
+    renderBody();
+    setInterval(autoHeight, 700);
+    window.addEventListener('load', autoHeight);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+"""
+
+# ---------------------------------------------------------------------------
 # HTML shell
 # ---------------------------------------------------------------------------
+
+
+_WIZARD_SECTOR_ORDER = [
+    "Banking",
+    "Investment Banking",
+    "Insurance",
+    "Healthcare",
+    "Asset Management",
+    "Pharma Clinical",
+    "Energy",
+    "Telecommunications",
+    "Retail",
+    "Manufacturing",
+    "Public Sector",
+    "Technology",
+    "Transportation",
+    "Other",
+]
+_WIZARD_REGION_ORDER = ["USA", "European Union", "United Kingdom", "Global"]
+
+
+def _wizard_config() -> Dict[str, Any]:
+    sectors: Dict[str, Any] = {}
+    for s in _WIZARD_SECTOR_ORDER:
+        d = _sector_defaults(s)
+        sectors[s] = {
+            "key_fields": d["key_fields"],
+            "amount_fields": d["amount_fields"],
+            "regulations": d["regulations"],
+        }
+    return {
+        "sectors": sectors,
+        "regions": _WIZARD_REGION_ORDER,
+        "build": _BUILD,
+    }
+
+
+def _wizard_shell_html() -> str:
+    cfg_json = json.dumps(_wizard_config())
+    return f"""<!DOCTYPE html>
+<html lang="en" data-ibm-build="{_BUILD}">
+<head>
+<meta charset="utf-8">
+<title>IBM Consulting Advantage — AI Reconciliation</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<style>{THEME_CSS}</style>
+<style>{WIZARD_CSS}</style>
+{CDN_SCRIPTS}
+</head>
+<body class="wz-root">
+<div class="wz-shell">
+  <div class="wz-head">
+    <h1><span class="wz-dot"></span>IBM Consulting Advantage · AI Reconciliation</h1>
+    <div class="wz-meta">Build {_BUILD}</div>
+  </div>
+  <div id="wz-stepper" class="wz-stepper"></div>
+  <div id="wz-body"></div>
+</div>
+<div id="wz-toast" class="wz-toast"></div>
+<script>window.__WZ_CFG__ = {cfg_json};</script>
+{WIZARD_SCRIPT}
+</body>
+</html>
+"""
 
 
 def _error_shell(message: str) -> str:
@@ -1057,18 +2514,10 @@ class Tools:
 
     async def reconcile(
         self,
-        left_records: List[Dict[str, Any]],
-        right_records: List[Dict[str, Any]],
-        sector: Literal[
-            "Banking",
-            "Investment Banking",
-            "Insurance",
-            "Healthcare",
-            "Asset Management",
-            "Pharma Clinical",
-            "Other",
-        ] = "Banking",
-        region: Literal["USA", "Europe", "Global"] = "USA",
+        left_records: Optional[List[Dict[str, Any]]] = None,
+        right_records: Optional[List[Dict[str, Any]]] = None,
+        sector: Optional[str] = None,
+        region: Optional[str] = None,
         key_fields: Optional[List[str]] = None,
         amount_fields: Optional[List[str]] = None,
         tolerance: Optional[float] = None,
@@ -1078,25 +2527,39 @@ class Tools:
         narrative: Optional[List[Dict[str, str]]] = None,
         __event_emitter__=None,
     ):
-        """Reconcile two structured record sets and render an inline IBM-branded report.
+        """Launch the AI Reconciliation wizard, or render a server-side report if records are supplied.
 
-        Use this tool when the user has uploaded files to reconcile or pasted
-        two tabular datasets to compare. Call ONCE after you have parsed the
-        uploaded files into two lists of dicts.
+        Default behaviour: call this tool with no arguments. The inline iframe
+        renders a stepwise wizard that lets the user upload two datasets
+        (CSV / TSV / XLSX / XLS / DOCX / PPTX / PDF / JSON), configure
+        matching rules, run reconciliation in the browser, and download
+        XLSX / CSV / PDF / DOCX outputs that carry a full audit trail
+        (run ID, SHA-256 of inputs, operator, regulation tags).
 
-        :param left_records: Left-hand dataset (e.g. GL, blotter, policy ledger, 837 claims, EDC). List of flat dicts.
-        :param right_records: Right-hand dataset (e.g. custodian, clearing, claims feed, 835 remittance, CRO). List of flat dicts.
-        :param sector: Business sector — drives default key/amount field heuristics and regulation tags.
-        :param region: Regulatory region — USA, Europe, or Global.
-        :param key_fields: Column names to use as the matching key. If omitted, sector defaults apply.
-        :param amount_fields: Column names to compare numerically for variance detection.
-        :param tolerance: Absolute tolerance for numeric equality. Defaults to 0.01.
-        :param regulations: Governing-regulation tags to display (e.g. ["BCBS 239", "EMIR"]). Tags only; no clause citation.
-        :param as_of: Reporting date (YYYY-MM-DD) shown in the header.
+        Advanced path (server-side): if you have already parsed two datasets
+        from chat context into lists of flat dicts, pass them via left_records
+        and right_records and the tool will produce a static report with
+        ooXML downloads (XLSX / DOCX / PPTX) built by Python — this is the
+        fallback used when client-side CDN libraries are blocked.
+
+        :param left_records: Optional left-hand dataset as a list of flat dicts. Omit to launch the wizard.
+        :param right_records: Optional right-hand dataset as a list of flat dicts. Omit to launch the wizard.
+        :param sector: Business sector (Banking, Investment Banking, Insurance, Healthcare, Asset Management, Pharma Clinical, Energy, Telecommunications, Retail, Manufacturing, Public Sector, Technology, Transportation, Other).
+        :param region: Regulatory region (USA, European Union, United Kingdom, Global).
+        :param key_fields: Column names to use as the matching key.
+        :param amount_fields: Numeric column names to compare for variance.
+        :param tolerance: Absolute tolerance for numeric equality.
+        :param regulations: Regulation tags to display.
+        :param as_of: Reporting date (YYYY-MM-DD).
         :param output_name: Base filename (without extension) for downloads.
         :param narrative: Optional list of {severity, regulation, text} commentary items.
-        :return: Inline HTMLResponse with interactive report and CDN/ooXML download buttons.
+        :return: Inline HTMLResponse — wizard by default, report when records are supplied.
         """
+        has_left = isinstance(left_records, list) and any(isinstance(r, dict) for r in left_records)
+        has_right = isinstance(right_records, list) and any(isinstance(r, dict) for r in right_records)
+        if not has_left and not has_right:
+            log.info("[recon] launching wizard (no records supplied)")
+            return HTMLResponse(content=_wizard_shell_html(), headers={"Content-Disposition": "inline"})
         log.info(
             "[recon] invoked: left=%s (%s items), right=%s (%s items), sector=%r, region=%r, key_fields=%r, amount_fields=%r, tolerance=%r, narrative_len=%s",
             type(left_records).__name__,
@@ -1189,11 +2652,17 @@ async def _do_reconcile(
     narrative,
     event_emitter,
 ):
+    sector = sector or "Banking"
+    region = region or "USA"
+    # Normalise legacy region spellings
+    region_map = {"Europe": "European Union", "EU": "European Union", "UK": "United Kingdom"}
+    region = region_map.get(region, region)
     defaults = _sector_defaults(sector)
     kf = key_fields or defaults["key_fields"]
     af = amount_fields or defaults["amount_fields"]
     tol = float(tolerance) if tolerance is not None else valves.default_tolerance
-    regs = regulations or defaults["regulations"].get(region, defaults["regulations"].get("USA", []))
+    reg_table = defaults.get("regulations", {}) if isinstance(defaults, dict) else {}
+    regs = regulations or reg_table.get(region) or reg_table.get("USA") or []
 
     if event_emitter:
         await event_emitter({"type": "status", "data": {"description": f"Matching {len(left)} vs {len(right)} records on {', '.join(kf)}…", "done": False}})
@@ -1261,15 +2730,16 @@ async def _do_reconcile(
 
 
 def _sector_defaults(sector: str) -> Dict[str, Any]:
-    s = sector.lower()
+    s = (sector or "").lower().strip()
     if s == "banking":
         return {
             "key_fields": ["TransactionID"],
             "amount_fields": ["Amount"],
             "regulations": {
-                "USA": ["FFIEC 031", "Reg W", "BCBS 239"],
-                "Europe": ["CRR/CRD IV", "FINREP", "BCBS 239"],
-                "Global": ["BCBS 239"],
+                "USA": ["FFIEC 031", "Reg W", "BCBS 239", "SOX 404"],
+                "European Union": ["CRR/CRD IV", "FINREP", "BCBS 239", "DORA"],
+                "United Kingdom": ["PRA SS1/23", "BCBS 239", "UK GAAP"],
+                "Global": ["BCBS 239", "Basel III"],
             },
         }
     if s == "investment banking":
@@ -1277,9 +2747,10 @@ def _sector_defaults(sector: str) -> Dict[str, Any]:
             "key_fields": ["TradeID"],
             "amount_fields": ["NetAmount", "Quantity", "Price"],
             "regulations": {
-                "USA": ["SEC 10-Q", "FINRA TRACE", "Dodd-Frank"],
-                "Europe": ["MiFID II RTS 22", "EMIR"],
-                "Global": ["IOSCO"],
+                "USA": ["SEC 10-Q", "FINRA TRACE", "Dodd-Frank", "CFTC Part 45"],
+                "European Union": ["MiFID II RTS 22", "EMIR REFIT", "CSDR"],
+                "United Kingdom": ["FCA MAR", "UK EMIR"],
+                "Global": ["IOSCO", "CPMI-IOSCO PFMI"],
             },
         }
     if s == "insurance":
@@ -1287,9 +2758,10 @@ def _sector_defaults(sector: str) -> Dict[str, Any]:
             "key_fields": ["PolicyNumber"],
             "amount_fields": ["GrossPremium", "NetPremium", "ClaimAmount", "Paid"],
             "regulations": {
-                "USA": ["NAIC SAP", "ORSA"],
-                "Europe": ["Solvency II", "IFRS 17"],
-                "Global": ["IFRS 17"],
+                "USA": ["NAIC SAP", "ORSA", "SOX 404"],
+                "European Union": ["Solvency II", "IFRS 17", "EIOPA"],
+                "United Kingdom": ["PRA SS4/18", "FCA ICOBS"],
+                "Global": ["IFRS 17", "IAIS ICP"],
             },
         }
     if s == "healthcare":
@@ -1297,9 +2769,10 @@ def _sector_defaults(sector: str) -> Dict[str, Any]:
             "key_fields": ["ClaimID"],
             "amount_fields": ["BilledAmount", "Paid", "Allowed", "Charged"],
             "regulations": {
-                "USA": ["HIPAA 837/835", "CMS-1500"],
-                "Europe": ["GDPR", "EHDS"],
-                "Global": ["HL7 FHIR"],
+                "USA": ["HIPAA 837/835", "CMS-1500", "HITECH"],
+                "European Union": ["GDPR", "EHDS", "MDR"],
+                "United Kingdom": ["UK GDPR", "NHS DSPT"],
+                "Global": ["HL7 FHIR", "ICD-10"],
             },
         }
     if s == "asset management":
@@ -1307,23 +2780,107 @@ def _sector_defaults(sector: str) -> Dict[str, Any]:
             "key_fields": ["AccountID", "ISIN"],
             "amount_fields": ["Quantity", "MarketValue"],
             "regulations": {
-                "USA": ["SEC 13F", "Investment Company Act"],
-                "Europe": ["UCITS", "AIFMD"],
+                "USA": ["SEC 13F", "Investment Company Act", "Form PF"],
+                "European Union": ["UCITS", "AIFMD", "SFDR"],
+                "United Kingdom": ["FCA COLL", "UK UCITS"],
                 "Global": ["IOSCO"],
             },
         }
-    if s in ("pharma clinical", "pharma_clinical", "pharmaceutical"):
+    if s in ("pharma clinical", "pharma_clinical", "pharmaceutical", "pharma/clinical"):
         return {
             "key_fields": ["SubjectID", "VisitDate"],
             "amount_fields": ["SystolicBP", "DiastolicBP", "HeartRate"],
             "regulations": {
                 "USA": ["FDA 21 CFR Part 11", "ICH GCP E6(R3)"],
-                "Europe": ["EMA EudraCT", "GDPR"],
-                "Global": ["ICH GCP"],
+                "European Union": ["EMA EudraCT", "GDPR", "CTR"],
+                "United Kingdom": ["MHRA GCP", "UK GDPR"],
+                "Global": ["ICH GCP", "CDISC"],
+            },
+        }
+    if s in ("energy", "energy & utilities", "utilities"):
+        return {
+            "key_fields": ["MeterID", "ReadingDate"],
+            "amount_fields": ["UsagekWh", "BilledAmount"],
+            "regulations": {
+                "USA": ["FERC Order 2222", "NERC CIP", "SOX 404"],
+                "European Union": ["REMIT", "ESRS E1", "EU ETS"],
+                "United Kingdom": ["Ofgem", "UK ETS"],
+                "Global": ["ISO 50001"],
+            },
+        }
+    if s in ("telecommunications", "telco", "telecom"):
+        return {
+            "key_fields": ["SubscriberID", "BillingCycle"],
+            "amount_fields": ["ChargeAmount", "Usage"],
+            "regulations": {
+                "USA": ["FCC CPNI", "SOX 404"],
+                "European Union": ["EECC", "GDPR", "NIS2"],
+                "United Kingdom": ["Ofcom GC"],
+                "Global": ["TM Forum"],
+            },
+        }
+    if s in ("retail", "retail & consumer", "consumer"):
+        return {
+            "key_fields": ["OrderID"],
+            "amount_fields": ["NetAmount", "TaxAmount", "TotalAmount"],
+            "regulations": {
+                "USA": ["SOX 404", "PCI DSS", "GAAP"],
+                "European Union": ["CSRD/ESRS", "PSD2", "GDPR"],
+                "United Kingdom": ["UK GAAP", "PSR"],
+                "Global": ["IFRS 15", "PCI DSS"],
+            },
+        }
+    if s in ("manufacturing", "manufacturing & industrial", "industrial"):
+        return {
+            "key_fields": ["POID", "MaterialCode"],
+            "amount_fields": ["Quantity", "UnitPrice", "LineAmount"],
+            "regulations": {
+                "USA": ["SOX 404", "FDA 21 CFR 820", "GAAP"],
+                "European Union": ["CSRD/ESRS", "CE Marking", "REACH"],
+                "United Kingdom": ["UKCA", "UK GAAP"],
+                "Global": ["ISO 9001", "IFRS 15"],
+            },
+        }
+    if s in ("public sector", "government", "public"):
+        return {
+            "key_fields": ["VoucherID"],
+            "amount_fields": ["ObligatedAmount", "DisbursedAmount"],
+            "regulations": {
+                "USA": ["FAR/DFARS", "GAO Green Book", "NIST 800-53"],
+                "European Union": ["EU Financial Regulation", "ESIF"],
+                "United Kingdom": ["Managing Public Money", "FReM"],
+                "Global": ["IPSAS"],
+            },
+        }
+    if s in ("technology", "software", "technology / software"):
+        return {
+            "key_fields": ["InvoiceID"],
+            "amount_fields": ["Subtotal", "Tax", "Total"],
+            "regulations": {
+                "USA": ["SOX 404", "GAAP ASC 606"],
+                "European Union": ["CSRD/ESRS", "DORA", "GDPR"],
+                "United Kingdom": ["UK GAAP", "UK DPA"],
+                "Global": ["IFRS 15", "ISO 27001"],
+            },
+        }
+    if s in ("transportation", "logistics", "transportation & logistics"):
+        return {
+            "key_fields": ["ShipmentID"],
+            "amount_fields": ["FreightAmount", "DutyAmount", "TotalAmount"],
+            "regulations": {
+                "USA": ["DOT FMCSA", "CBP 19 CFR", "SOX 404"],
+                "European Union": ["UCC", "CSRD/ESRS"],
+                "United Kingdom": ["HMRC CDS"],
+                "Global": ["IATA", "IMO"],
             },
         }
     return {
         "key_fields": ["ID"],
         "amount_fields": ["Amount"],
-        "regulations": {"USA": [], "Europe": [], "Global": []},
+        "regulations": {
+            "USA": ["SOX 404", "GAAP"],
+            "European Union": ["IFRS", "GDPR"],
+            "United Kingdom": ["UK GAAP", "UK GDPR"],
+            "Global": ["IFRS", "ISO 27001"],
+        },
     }

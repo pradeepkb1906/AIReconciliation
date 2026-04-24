@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .DS_Store
 .webui_secret_key
+$DB
+.claude/
+Kanban_Visualizer_Tool.py
