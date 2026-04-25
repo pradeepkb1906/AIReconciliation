@@ -14,6 +14,7 @@ Workflow (from CLAUDE.md mandatory sync recipe):
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import sqlite3
@@ -21,7 +22,40 @@ import subprocess
 import sys
 import time
 import uuid
+import warnings
 from pathlib import Path
+
+
+def assert_no_syntax_warnings(src: str, label: str) -> None:
+    """Reject content that would emit SyntaxWarning under Python 3.13+.
+
+    Python 3.13 promotes 'invalid escape sequence' from a SyntaxWarning to a
+    DeprecationWarning, and 3.15 will turn it into a SyntaxError. OWUI's tool
+    loader compiles via compile(src, '<exec>', 'exec'), so any unflagged
+    invalid escape lands in /tmp/owui-restart.log on every tool import.
+    Catching it at seed time keeps the DB clean.
+    """
+    captured = io.StringIO()
+
+    def _capture(message, category, filename, lineno, file=None, line=None):
+        captured.write(f"{category.__name__}: line {lineno}: {message}\n")
+
+    prev_show = warnings.showwarning
+    prev_filters = warnings.filters[:]
+    warnings.showwarning = _capture
+    warnings.simplefilter("always")
+    try:
+        compile(src, "<exec>", "exec")
+    finally:
+        warnings.showwarning = prev_show
+        warnings.filters = prev_filters
+
+    syn = [ln for ln in captured.getvalue().splitlines() if "SyntaxWarning" in ln]
+    if syn:
+        sys.exit(
+            f"[error] {label} would emit SyntaxWarning on OWUI import:\n  "
+            + "\n  ".join(syn)
+        )
 
 HERE = Path(__file__).resolve().parent
 TOOL_PY = HERE / "reconciliation_tool.py"
@@ -223,6 +257,14 @@ def main() -> None:
 
     tool_src = TOOL_PY.read_text(encoding="utf-8")
     system_prompt = MODEL_MD.read_text(encoding="utf-8")
+
+    # Block bad escape sequences from ever entering the DB. OWUI imports the
+    # tool via compile(src, '<exec>', 'exec'); a single \ + non-escape char in
+    # a non-raw string emits "<exec>:N: SyntaxWarning: invalid escape
+    # sequence" on every load. Python 3.15 turns it into a SyntaxError.
+    assert_no_syntax_warnings(tool_src, "reconciliation_tool.py")
+    print(f"[lint] tool source compiles SyntaxWarning-free under Python {sys.version_info.major}.{sys.version_info.minor}")
+
     now = int(time.time())
 
     con = sqlite3.connect(db_path, timeout=30)
