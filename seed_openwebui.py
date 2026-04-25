@@ -154,8 +154,8 @@ def tool_specs() -> list:
     ]
 
 
-VERSION = "1.0.1"
-RELEASE_TS = "2026-04-25T05:07:49Z"  # V1.0 first end-to-end working release
+VERSION = "1.0.2"
+RELEASE_TS = "2026-04-25T05:38:00Z"  # V1.0.2 align with working OWUI tool template
 
 
 def tool_meta() -> dict:

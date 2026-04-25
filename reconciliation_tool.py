@@ -1,8 +1,12 @@
 """
+# Last synced to OWUI DB: 2026-04-25 10:38:00 IST
 title: AI Reconciliation
 author: IBM Consulting Advantage
-version: 1.0.1
+version: 1.0.2
+description: Stepwise in-iframe reconciliation wizard for two related datasets across regulated sectors (Banking, Insurance, Healthcare, Asset Management, Pharma, Energy, Telco, Retail, Manufacturing, Public Sector, Tech, Transportation) and regions (USA, EU, UK, Global). Uploads CSV, TSV, XLSX, DOCX, PPTX, PDF, JSON. Inline downloads as XLSX, CSV, PDF, DOCX with audit trail (run ID, SHA-256, regulation tags). Requires iframe Sandbox Allow Same Origin in Open WebUI Settings -> Interface.
 """
+
+# Last synced to OWUI DB: 2026-04-25 10:38:00 IST
 
 import base64
 import html as htmlmod
@@ -21,8 +25,8 @@ from pydantic import BaseModel, Field
 log = logging.getLogger("reconciliation_tool")
 log.setLevel(logging.INFO)
 
-_BUILD = "1.0.1"
-_RELEASE_TS = "2026-04-25T05:07:49Z"  # V1.0 first end-to-end working release
+_BUILD = "1.0.2"
+_RELEASE_TS = "2026-04-25T05:38:00Z"  # V1.0.2 align with working OWUI tool template
 
 # ---------------------------------------------------------------------------
 # IBM Light Navy Blue theme
