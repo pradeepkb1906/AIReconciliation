@@ -182,8 +182,8 @@ def tool_specs() -> list:
     ]
 
 
-VERSION = "1.0.3"
-RELEASE_TS = "2026-04-25T06:24:08Z"  # V1.0.3 invisible-char scrubber + Beta diagnostic
+VERSION = "1.0.5"
+RELEASE_TS = "2026-04-25T07:03:22Z"  # V1.0.5 layout matched to Beta + clean-upload path
 
 
 def tool_meta() -> dict:
