@@ -1,7 +1,8 @@
 """
 title: AI Reconciliation
 author: IBM Consulting Advantage
-version: 2.0.0
+version: 1.0.0
+release: V1.0 (2026-04-25T05:07:49Z) — first end-to-end working release.
 description: Stepwise in-iframe reconciliation wizard. Accepts CSV/TSV/XLSX/XLS/DOCX/PPTX/PDF/JSON uploads, runs deterministic matching in the browser, and generates XLSX/CSV/PDF/DOCX outputs accepted by USA and EU regulators (SOX, BCBS 239, EMIR, MiFID II, Solvency II, HIPAA, 21 CFR Part 11, GDPR, DORA). Falls back to server-side ooXML generation when CDN libraries are blocked. Requires iframe Sandbox Allow Same Origin in Open WebUI Settings -> Interface.
 """
 
@@ -24,7 +25,8 @@ from typing import Any, Dict, List, Literal, Optional
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-_BUILD = "2.0.0"
+_BUILD = "1.0.0"
+_RELEASE_TS = "2026-04-25T05:07:49Z"  # V1.0 — first working end-to-end release
 
 # ---------------------------------------------------------------------------
 # IBM Light Navy Blue theme
@@ -2495,7 +2497,7 @@ class Tools:
     The LLM parses uploaded regulatory documents from Open WebUI's attachment
     context, normalises them into two structured record lists (left / right),
     decides the key fields and amount fields per sector, and calls
-    ``reconcile`` to get a deterministic partition plus an inline IBM-themed
+    'reconcile' to get a deterministic partition plus an inline IBM-themed
     report with CDN-first / ooXML-fallback downloads (XLSX / DOCX / PPTX).
     """
 
@@ -2519,6 +2521,7 @@ class Tools:
         as_of: Optional[str] = None,
         output_name: Optional[str] = None,
         tolerance: Optional[float] = None,
+        __event_call__=None,
         __event_emitter__=None,
     ):
         """Launch the AI Reconciliation wizard in an inline iframe.

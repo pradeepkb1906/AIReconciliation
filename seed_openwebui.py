@@ -30,7 +30,11 @@ README_MD = HERE / "README.md"
 
 TOOL_ID = "ai_reconciliation_tool"
 MODEL_ID = "ai-reconciliation-model"
-BASE_MODEL_ID = "claude-opus-4-6"
+# Bedrock IAM in this environment authorizes claude-sonnet-4-6 but not
+# claude-opus-4-6 for the ica-bedrock-inferencing-nonprod user. Using opus
+# results in: "User ... is not authorized to perform: bedrock:InvokeModelWithResponseStream
+# on resource: arn:aws:bedrock:us-east-1:.../claude-opus-4-6-v1".
+BASE_MODEL_ID = "claude-sonnet-4-6"
 
 
 def resolve_db_path() -> str:
@@ -116,13 +120,22 @@ def tool_specs() -> list:
     ]
 
 
+VERSION = "1.0.0"
+RELEASE_TS = "2026-04-25T05:07:49Z"  # V1.0 — first end-to-end working release
+
+
 def tool_meta() -> dict:
     return {
-        "description": "IBM Consulting Advantage — AI Reconciliation tool (Banking, Investment Banking, Insurance, Healthcare, Asset Management, Pharma Clinical; USA + Europe).",
+        "description": (
+            f"IBM Consulting Advantage — AI Reconciliation tool "
+            f"(Banking, Investment Banking, Insurance, Healthcare, Asset Management, "
+            f"Pharma Clinical; USA + Europe). V{VERSION} released {RELEASE_TS}."
+        ),
         "manifest": {
             "title": "AI Reconciliation",
             "author": "IBM Consulting Advantage",
-            "version": "1.0.0",
+            "version": VERSION,
+            "release_ts": RELEASE_TS,
             "description": "Reconciles two datasets across regulated sectors and regions; inline report + XLSX/DOCX/PPTX downloads (CDN-first with ooXML server fallback).",
         },
     }
@@ -131,7 +144,15 @@ def tool_meta() -> dict:
 def model_meta() -> dict:
     return {
         "profile_image_url": "/static/favicon.png",
-        "description": "IBM Consulting Advantage — AI Reconciliation. Stepwise inline wizard: Scope → Upload (CSV, TSV, XLSX, DOCX, PPTX, PDF, JSON) → Matching rules → Run → Download (XLSX, CSV, PDF, DOCX). USA, EU, UK, Global. Banking, Investment Banking, Insurance, Healthcare, Asset Management, Pharma, Energy, Telco, Retail, Manufacturing, Public Sector, Tech, Transportation. CDN-first with ooXML server fallback. Every output carries run ID, SHA-256 of inputs, and regulation tags for audit traceability.",
+        "description": (
+            f"IBM Consulting Advantage — AI Reconciliation V{VERSION} ({RELEASE_TS}). "
+            f"Stepwise inline wizard: Scope → Upload (CSV, TSV, XLSX, DOCX, PPTX, PDF, JSON) → "
+            f"Matching rules → Run → Download (XLSX, CSV, PDF, DOCX). USA, EU, UK, Global. "
+            f"Banking, Investment Banking, Insurance, Healthcare, Asset Management, Pharma, "
+            f"Energy, Telco, Retail, Manufacturing, Public Sector, Tech, Transportation. "
+            f"CDN-first with ooXML server fallback. Every output carries run ID, SHA-256 of "
+            f"inputs, and regulation tags for audit traceability."
+        ),
         "capabilities": {
             "vision": False,
             "usage": True,
@@ -160,7 +181,12 @@ def model_meta() -> dict:
             {"name": "europe"},
         ],
         "toolIds": [TOOL_ID],
-        "builtinTools": [],
+        # builtinTools must be a DICT (e.g. {"time": False}) — not a list.
+        # OWUI utils/tools.py:424 calls .get(category, True) on this field, so
+        # an empty list raises "'list' object has no attribute 'get'" on every
+        # message (including a plain "hi"). Use {} to fall back to all-True
+        # defaults, or specify each category explicitly.
+        "builtinTools": {},
     }
 
 
