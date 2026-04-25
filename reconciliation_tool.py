@@ -1,9 +1,15 @@
-"""
+r"""
 title: AI Reconciliation
 author: IBM Consulting Advantage
 version: 1.0.0
-release: V1.0 (2026-04-25T05:07:49Z) — first end-to-end working release.
+release: V1.0 (2026-04-25T05:07:49Z) -- first end-to-end working release.
 description: Stepwise in-iframe reconciliation wizard. Accepts CSV/TSV/XLSX/XLS/DOCX/PPTX/PDF/JSON uploads, runs deterministic matching in the browser, and generates XLSX/CSV/PDF/DOCX outputs accepted by USA and EU regulators (SOX, BCBS 239, EMIR, MiFID II, Solvency II, HIPAA, 21 CFR Part 11, GDPR, DORA). Falls back to server-side ooXML generation when CDN libraries are blocked. Requires iframe Sandbox Allow Same Origin in Open WebUI Settings -> Interface.
+
+Python compatibility: this module is verified clean under strict
+SyntaxWarning checks on Python 3.12, 3.13, and 3.14. The module docstring
+above is intentionally a raw triple-quoted string (r-prefix) so it cannot
+emit "invalid escape sequence" even if a future edit drops a backslash
+into the description.
 """
 
 from __future__ import annotations
@@ -131,7 +137,7 @@ a {{ color: var(--ibm-blue); }}
 # Pastel wizard theme (IBM Light Navy, very light and pleasant)
 # ---------------------------------------------------------------------------
 
-WIZARD_CSS = """
+WIZARD_CSS = r"""
 :root {
   --wz-bg: #F4F8FC;
   --wz-surface: #FFFFFF;
@@ -297,7 +303,7 @@ WIZARD_CSS = """
 # CDN libraries for client-side download (primary path)
 # ---------------------------------------------------------------------------
 
-CDN_SCRIPTS = """
+CDN_SCRIPTS = r"""
 <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" referrerpolicy="no-referrer"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" referrerpolicy="no-referrer"></script>
 <script>
@@ -2053,7 +2059,7 @@ def _key_for(rec: Dict[str, Any], key_fields: List[str]) -> str:
 
 
 def _redact_pii(records: List[Dict[str, Any]], sector: str) -> List[Dict[str, Any]]:
-    """HIPAA / GDPR-aware redaction for healthcare downloads."""
+    r"""HIPAA / GDPR-aware redaction for healthcare downloads."""
     if sector.lower() not in ("healthcare", "pharma_clinical", "pharma/clinical", "pharmaceutical"):
         return records
     out = []
@@ -2087,7 +2093,7 @@ def _reconcile(
     amount_fields: List[str],
     tolerance: float,
 ) -> Dict[str, Any]:
-    """Deterministic partition: matched / variance / unmatched_left / unmatched_right."""
+    r"""Deterministic partition: matched / variance / unmatched_left / unmatched_right."""
     right_index: Dict[str, List[int]] = {}
     for i, r in enumerate(right):
         k = _key_for(r, key_fields)
@@ -2492,7 +2498,7 @@ def _build_server_fallback(payload: Dict[str, Any], base_name: str) -> Dict[str,
 
 
 class Tools:
-    """IBM Consulting Advantage — AI Reconciliation.
+    r"""IBM Consulting Advantage -- AI Reconciliation.
 
     The LLM parses uploaded regulatory documents from Open WebUI's attachment
     context, normalises them into two structured record lists (left / right),
@@ -2524,9 +2530,9 @@ class Tools:
         __event_call__=None,
         __event_emitter__=None,
     ):
-        """Launch the AI Reconciliation wizard in an inline iframe.
+        r"""Launch the AI Reconciliation wizard in an inline iframe.
 
-        Call this tool whenever the user expresses a reconciliation intent —
+        Call this tool whenever the user expresses a reconciliation intent --
         uploading files, comparing two datasets, month-end close, etc.
         The iframe renders a stepwise wizard that lets the user upload two
         datasets (CSV / TSV / XLSX / XLS / DOCX / PPTX / PDF / JSON),
