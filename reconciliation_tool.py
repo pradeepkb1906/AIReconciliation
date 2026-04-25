@@ -1,8 +1,9 @@
 """
-# Last synced to OWUI DB: 2026-04-25 11:54:08 IST
+Last synced to OWUI DB: 2026-04-25 12:15:00 IST
+
 title: AI Reconciliation
 author: IBM Consulting Advantage
-version: 1.0.3
+version: 1.0.4
 description: Stepwise in-iframe reconciliation wizard for two related datasets across regulated sectors (Banking, Insurance, Healthcare, Asset Management, Pharma, Energy, Telco, Retail, Manufacturing, Public Sector, Tech, Transportation) and regions (USA, EU, UK, Global). Uploads CSV, TSV, XLSX, DOCX, PPTX, PDF, JSON. Inline downloads as XLSX, CSV, PDF, DOCX with audit trail (run ID, SHA-256, regulation tags). Requires iframe Sandbox Allow Same Origin in Open WebUI Settings -> Interface.
 """
 
@@ -45,7 +46,7 @@ IBM_SUCCESS = "#24A148"
 IBM_WARN = "#F1C21B"
 IBM_DANGER = "#DA1E28"
 
-THEME_CSS = f"""
+THEME_CSS = rf"""
 :root {{
   --ibm-navy: {IBM_NAVY};
   --ibm-navy-dark: {IBM_NAVY_DARK};
@@ -1979,8 +1980,7 @@ def _shell_html(
     fallback_json = json.dumps(server_fallback)
     payload_json = json.dumps(inline_payload) if inline_payload else "null"
     observer = (
-        OBSERVER_SCRIPT
-        .replace("__IBM_NAVY__", IBM_NAVY)
+        OBSERVER_SCRIPT.replace("__IBM_NAVY__", IBM_NAVY)
         .replace("__IBM_BLUE__", IBM_BLUE)
         .replace("__BUILD__", _BUILD)
     )
@@ -2054,10 +2054,22 @@ def _key_for(rec: Dict[str, Any], key_fields: List[str]) -> str:
 
 def _redact_pii(records: List[Dict[str, Any]], sector: str) -> List[Dict[str, Any]]:
     r"""HIPAA / GDPR-aware redaction for healthcare downloads."""
-    if sector.lower() not in ("healthcare", "pharma_clinical", "pharma/clinical", "pharmaceutical"):
+    if sector.lower() not in (
+        "healthcare",
+        "pharma_clinical",
+        "pharma/clinical",
+        "pharmaceutical",
+    ):
         return records
     out = []
-    name_keys = {"patientname", "patient", "insured", "policyholder", "subject", "patientfullname"}
+    name_keys = {
+        "patientname",
+        "patient",
+        "insured",
+        "policyholder",
+        "subject",
+        "patientfullname",
+    }
     dob_keys = {"patientdob", "dob", "birthdate", "dateofbirth"}
     id_keys = {"ssn", "socialsecurity", "memberid", "member_id", "patientid", "mrn"}
     for r in records:
@@ -2116,7 +2128,21 @@ def _reconcile(
             # right may have a differently-named amount field; check same name first, then common synonyms
             rv = _to_float(rrec.get(f))
             if rv is None:
-                for alt in (f.lower(), f.upper(), f.replace("_", "").lower(), "amount", "Amount", "NetAmount", "Consideration", "MV", "MarketValue", "Paid", "PaidAmount", "BilledAmount", "Charged"):
+                for alt in (
+                    f.lower(),
+                    f.upper(),
+                    f.replace("_", "").lower(),
+                    "amount",
+                    "Amount",
+                    "NetAmount",
+                    "Consideration",
+                    "MV",
+                    "MarketValue",
+                    "Paid",
+                    "PaidAmount",
+                    "BilledAmount",
+                    "Charged",
+                ):
                     if alt in rrec:
                         rv = _to_float(rrec.get(alt))
                         if rv is not None:
@@ -2222,7 +2248,17 @@ def _build_xlsx_bytes(payload: Dict[str, Any]) -> bytes:
         ("Missing_in_Right", payload.get("unmatched_left", [])),
         ("Missing_in_Left", payload.get("unmatched_right", [])),
         ("Matched", payload.get("matched", [])),
-        ("Commentary", [{"severity": n.get("severity", ""), "regulation": n.get("regulation", ""), "text": n.get("text", "")} for n in payload.get("narrative", [])]),
+        (
+            "Commentary",
+            [
+                {
+                    "severity": n.get("severity", ""),
+                    "regulation": n.get("regulation", ""),
+                    "text": n.get("text", ""),
+                }
+                for n in payload.get("narrative", [])
+            ],
+        ),
     ]
     for name, rows in sections:
         add_sheet(name, rows, name.replace("_", " "))
@@ -2254,11 +2290,15 @@ def _build_docx_bytes(payload: Dict[str, Any]) -> bytes:
     for r in h.runs:
         r.font.color.rgb = RGBColor(0x00, 0x2D, 0x74)
 
-    doc.add_paragraph(f"Sector: {meta.get('sector','')}   Region: {meta.get('region','')}   As of: {meta.get('asOf','')}")
+    doc.add_paragraph(
+        f"Sector: {meta.get('sector', '')}   Region: {meta.get('region', '')}   As of: {meta.get('asOf', '')}"
+    )
     if meta.get("regulations"):
         doc.add_paragraph("Regulations: " + ", ".join(meta["regulations"]))
     if meta.get("redacted"):
-        doc.add_paragraph("Note: patient/subject PII has been redacted in accordance with HIPAA / GDPR.")
+        doc.add_paragraph(
+            "Note: patient/subject PII has been redacted in accordance with HIPAA / GDPR."
+        )
 
     doc.add_heading("Summary", level=1)
     tbl = doc.add_table(rows=1, cols=2)
@@ -2329,11 +2369,15 @@ def _build_pptx_bytes(payload: Dict[str, Any]) -> bytes:
     blank = pres.slide_layouts[6]
 
     def title_bar(slide, text):
-        shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, pres.slide_width, Inches(0.6))
+        shape = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, 0, 0, pres.slide_width, Inches(0.6)
+        )
         shape.fill.solid()
         shape.fill.fore_color.rgb = NAVY
         shape.line.fill.background()
-        tb = slide.shapes.add_textbox(Inches(0.3), Inches(0.05), Inches(12), Inches(0.5))
+        tb = slide.shapes.add_textbox(
+            Inches(0.3), Inches(0.05), Inches(12), Inches(0.5)
+        )
         tf = tb.text_frame
         tf.text = text
         tf.paragraphs[0].runs[0].font.size = Pt(20)
@@ -2342,7 +2386,9 @@ def _build_pptx_bytes(payload: Dict[str, Any]) -> bytes:
 
     # Slide 1: cover
     s = pres.slides.add_slide(blank)
-    bg = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, pres.slide_width, pres.slide_height)
+    bg = s.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, 0, 0, pres.slide_width, pres.slide_height
+    )
     bg.fill.solid()
     bg.fill.fore_color.rgb = NAVY
     bg.line.fill.background()
@@ -2357,7 +2403,7 @@ def _build_pptx_bytes(payload: Dict[str, Any]) -> bytes:
     tb.text_frame.paragraphs[0].runs[0].font.bold = True
     tb.text_frame.paragraphs[0].runs[0].font.color.rgb = WHITE
     tb = s.shapes.add_textbox(Inches(0.5), Inches(2.8), Inches(12), Inches(0.5))
-    tb.text_frame.text = f"{meta.get('sector','')} · {meta.get('region','')} · as of {meta.get('asOf','')}"
+    tb.text_frame.text = f"{meta.get('sector', '')} · {meta.get('region', '')} · as of {meta.get('asOf', '')}"
     tb.text_frame.paragraphs[0].runs[0].font.size = Pt(18)
     tb.text_frame.paragraphs[0].runs[0].font.color.rgb = RGBColor(0xD0, 0xE2, 0xFF)
 
@@ -2392,7 +2438,9 @@ def _build_pptx_bytes(payload: Dict[str, Any]) -> bytes:
         title_bar(s, f"{title} ({len(rows)})")
         keys = list(rows[0].keys())[:6]
         n_rows = min(len(rows), 14) + 1
-        tbl_shape = s.shapes.add_table(n_rows, len(keys), Inches(0.3), Inches(0.8), Inches(12.7), Inches(6.2))
+        tbl_shape = s.shapes.add_table(
+            n_rows, len(keys), Inches(0.3), Inches(0.8), Inches(12.7), Inches(6.2)
+        )
         tbl = tbl_shape.table
         for j, k in enumerate(keys):
             cell = tbl.cell(0, j)
@@ -2431,7 +2479,7 @@ def _build_pptx_bytes(payload: Dict[str, Any]) -> bytes:
             p = tf.paragraphs[0] if first else tf.add_paragraph()
             first = False
             p.level = 0
-            tag = f"[{n.get('regulation','')}] " if n.get("regulation") else ""
+            tag = f"[{n.get('regulation', '')}] " if n.get("regulation") else ""
             run1 = p.add_run()
             run1.text = tag
             run1.font.bold = True
@@ -2451,38 +2499,52 @@ def _b64_data_uri(mime: str, data: bytes) -> str:
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
-def _build_server_fallback(payload: Dict[str, Any], base_name: str) -> Dict[str, Dict[str, str]]:
+def _build_server_fallback(
+    payload: Dict[str, Any], base_name: str
+) -> Dict[str, Dict[str, str]]:
     out: Dict[str, Dict[str, str]] = {}
     try:
         xlsx = _build_xlsx_bytes(payload)
         out["xlsx"] = {
             "filename": f"{base_name}.xlsx",
             "dataUri": _b64_data_uri(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                xlsx,
             ),
         }
     except Exception as e:
-        out["xlsx_error"] = {"filename": "", "dataUri": f"data:text/plain;base64,{base64.b64encode(str(e).encode()).decode()}"}
+        out["xlsx_error"] = {
+            "filename": "",
+            "dataUri": f"data:text/plain;base64,{base64.b64encode(str(e).encode()).decode()}",
+        }
     try:
         docx = _build_docx_bytes(payload)
         out["docx"] = {
             "filename": f"{base_name}.docx",
             "dataUri": _b64_data_uri(
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                docx,
             ),
         }
     except Exception as e:
-        out["docx_error"] = {"filename": "", "dataUri": f"data:text/plain;base64,{base64.b64encode(str(e).encode()).decode()}"}
+        out["docx_error"] = {
+            "filename": "",
+            "dataUri": f"data:text/plain;base64,{base64.b64encode(str(e).encode()).decode()}",
+        }
     try:
         pptx = _build_pptx_bytes(payload)
         out["pptx"] = {
             "filename": f"{base_name}.pptx",
             "dataUri": _b64_data_uri(
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                pptx,
             ),
         }
     except Exception as e:
-        out["pptx_error"] = {"filename": "", "dataUri": f"data:text/plain;base64,{base64.b64encode(str(e).encode()).decode()}"}
+        out["pptx_error"] = {
+            "filename": "",
+            "dataUri": f"data:text/plain;base64,{base64.b64encode(str(e).encode()).decode()}",
+        }
     return out
 
 
@@ -2547,17 +2609,38 @@ class Tools:
         """
         log.info("[recon] launching wizard: sector=%r region=%r", sector, region)
         if __event_emitter__:
-            await __event_emitter__({"type": "status", "data": {"description": "Loading reconciliation wizard...", "done": False}})
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "description": "Loading reconciliation wizard...",
+                        "done": False,
+                    },
+                }
+            )
         try:
             html = _wizard_shell_html()
             if __event_emitter__:
-                await __event_emitter__({"type": "status", "data": {"description": "Wizard ready.", "done": True}})
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {"description": "Wizard ready.", "done": True},
+                    }
+                )
             return HTMLResponse(content=html, headers={"Content-Disposition": "inline"})
         except Exception as exc:
             tb = traceback.format_exc()
             log.error("[recon] wizard render failed: %s\n%s", exc, tb)
             if __event_emitter__:
-                await __event_emitter__({"type": "status", "data": {"description": f"Error: {type(exc).__name__}", "done": True}})
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {
+                            "description": f"Error: {type(exc).__name__}",
+                            "done": True,
+                        },
+                    }
+                )
             return HTMLResponse(
                 content=_error_shell(
                     f"Wizard render failed with: {type(exc).__name__}: {exc}."
@@ -2584,7 +2667,11 @@ async def _do_reconcile(
     sector = sector or "Banking"
     region = region or "USA"
     # Normalise legacy region spellings
-    region_map = {"Europe": "European Union", "EU": "European Union", "UK": "United Kingdom"}
+    region_map = {
+        "Europe": "European Union",
+        "EU": "European Union",
+        "UK": "United Kingdom",
+    }
     region = region_map.get(region, region)
     defaults = _sector_defaults(sector)
     kf = key_fields or defaults["key_fields"]
@@ -2594,12 +2681,25 @@ async def _do_reconcile(
     regs = regulations or reg_table.get(region) or reg_table.get("USA") or []
 
     if event_emitter:
-        await event_emitter({"type": "status", "data": {"description": f"Matching {len(left)} vs {len(right)} records on {', '.join(kf)}…", "done": False}})
+        await event_emitter(
+            {
+                "type": "status",
+                "data": {
+                    "description": f"Matching {len(left)} vs {len(right)} records on {', '.join(kf)}…",
+                    "done": False,
+                },
+            }
+        )
 
     result = _reconcile(left, right, kf, af, tol)
 
     redacted = False
-    if sector.lower() in ("healthcare", "pharma clinical", "pharma_clinical", "pharmaceutical"):
+    if sector.lower() in (
+        "healthcare",
+        "pharma clinical",
+        "pharma_clinical",
+        "pharmaceutical",
+    ):
         for bucket in ("matched", "variance", "unmatched_left", "unmatched_right"):
             result[bucket] = _redact_pii(result[bucket], sector)
         redacted = True
@@ -2617,7 +2717,8 @@ async def _do_reconcile(
         "regulations": regs,
         "asOf": as_of or time.strftime("%Y-%m-%d"),
         "runId": run_id,
-        "outputName": output_name or f"reconciliation_{sector.lower().replace(' ', '_')}",
+        "outputName": output_name
+        or f"reconciliation_{sector.lower().replace(' ', '_')}",
         "redacted": redacted,
     }
     payload = {
@@ -2631,7 +2732,15 @@ async def _do_reconcile(
     }
 
     if event_emitter:
-        await event_emitter({"type": "status", "data": {"description": "Building ooXML server fallback (XLSX / DOCX / PPTX)…", "done": False}})
+        await event_emitter(
+            {
+                "type": "status",
+                "data": {
+                    "description": "Building ooXML server fallback (XLSX / DOCX / PPTX)…",
+                    "done": False,
+                },
+            }
+        )
 
     base_name = f"{meta['outputName']}_{meta['asOf'].replace('-', '')}"
     server_fallback = _build_server_fallback(payload, base_name)
@@ -2639,17 +2748,19 @@ async def _do_reconcile(
     html = _shell_html(meta, server_fallback, inline_payload=payload)
 
     if event_emitter:
-        await event_emitter({
-            "type": "status",
-            "data": {
-                "description": (
-                    f"Reconciliation complete — {result['stats']['match_rate']}% match rate · "
-                    f"{result['stats']['variance']} variance · "
-                    f"{result['stats']['unmatched_left']+result['stats']['unmatched_right']} unmatched."
-                ),
-                "done": True,
-            },
-        })
+        await event_emitter(
+            {
+                "type": "status",
+                "data": {
+                    "description": (
+                        f"Reconciliation complete — {result['stats']['match_rate']}% match rate · "
+                        f"{result['stats']['variance']} variance · "
+                        f"{result['stats']['unmatched_left'] + result['stats']['unmatched_right']} unmatched."
+                    ),
+                    "done": True,
+                },
+            }
+        )
     return HTMLResponse(content=html, headers={"Content-Disposition": "inline"})
 
 
