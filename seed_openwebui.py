@@ -26,6 +26,34 @@ import warnings
 from pathlib import Path
 
 
+_INVISIBLE_CONTROL_CHARS = set(range(0x01, 0x09)) | {0x0B, 0x0C} | set(range(0x0E, 0x20)) | {0x7F}
+
+
+def scrub_invisible_chars(src: str, label: str) -> str:
+    """Strip invisible control bytes (other than \\t \\n \\r) and warn.
+
+    A backslash followed by a non-printable control char (e.g. ESC=0x1b
+    from a terminal copy-paste, BEL=0x07, DEL=0x7f) compiles to a
+    SyntaxWarning whose toast display collapses to "'\\\\'" because the
+    offending char is invisible. This is the exact symptom that hit Beta
+    after the user pasted the tool source through a clipboard pipeline
+    that left stray control characters in the buffer.
+    """
+    hits = []
+    for i, ch in enumerate(src):
+        if ord(ch) in _INVISIBLE_CONTROL_CHARS:
+            line = src[:i].count("\n") + 1
+            col = i - src.rfind("\n", 0, i)
+            hits.append((line, col, hex(ord(ch))))
+    if hits:
+        print(f"[scrub] {label}: stripped {len(hits)} invisible control char(s):")
+        for line, col, hx in hits[:10]:
+            print(f"        L{line} col{col}: {hx}")
+        scrubbed = "".join(c for c in src if ord(c) not in _INVISIBLE_CONTROL_CHARS)
+        return scrubbed
+    return src
+
+
 def assert_no_syntax_warnings(src: str, label: str) -> None:
     """Reject content that would emit SyntaxWarning under Python 3.13+.
 
@@ -154,8 +182,8 @@ def tool_specs() -> list:
     ]
 
 
-VERSION = "1.0.2"
-RELEASE_TS = "2026-04-25T05:38:00Z"  # V1.0.2 align with working OWUI tool template
+VERSION = "1.0.3"
+RELEASE_TS = "2026-04-25T06:24:08Z"  # V1.0.3 invisible-char scrubber + Beta diagnostic
 
 
 def tool_meta() -> dict:
@@ -257,6 +285,12 @@ def main() -> None:
 
     tool_src = TOOL_PY.read_text(encoding="utf-8")
     system_prompt = MODEL_MD.read_text(encoding="utf-8")
+
+    # Strip invisible control chars first - copy-paste through some clipboards
+    # smuggles stray bytes (ESC=0x1b, BEL=0x07, DEL=0x7f) that, if preceded by
+    # a backslash, emit "<exec>:N: SyntaxWarning: invalid escape sequence" with
+    # the second char invisible in the toast UI (renders as just "'\'").
+    tool_src = scrub_invisible_chars(tool_src, "reconciliation_tool.py")
 
     # Block bad escape sequences from ever entering the DB. OWUI imports the
     # tool via compile(src, '<exec>', 'exec'); a single \ + non-escape char in
