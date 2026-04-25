@@ -1,18 +1,8 @@
-r"""
+"""
 title: AI Reconciliation
 author: IBM Consulting Advantage
-version: 1.0.0
-release: V1.0 (2026-04-25T05:07:49Z) -- first end-to-end working release.
-description: Stepwise in-iframe reconciliation wizard. Accepts CSV/TSV/XLSX/XLS/DOCX/PPTX/PDF/JSON uploads, runs deterministic matching in the browser, and generates XLSX/CSV/PDF/DOCX outputs accepted by USA and EU regulators (SOX, BCBS 239, EMIR, MiFID II, Solvency II, HIPAA, 21 CFR Part 11, GDPR, DORA). Falls back to server-side ooXML generation when CDN libraries are blocked. Requires iframe Sandbox Allow Same Origin in Open WebUI Settings -> Interface.
-
-Python compatibility: this module is verified clean under strict
-SyntaxWarning checks on Python 3.12, 3.13, and 3.14. The module docstring
-above is intentionally a raw triple-quoted string (r-prefix) so it cannot
-emit "invalid escape sequence" even if a future edit drops a backslash
-into the description.
+version: 1.0.1
 """
-
-from __future__ import annotations
 
 import base64
 import html as htmlmod
@@ -23,16 +13,16 @@ import re
 import time
 import traceback
 import uuid
-
-log = logging.getLogger("reconciliation_tool")
-log.setLevel(logging.INFO)
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-_BUILD = "1.0.0"
-_RELEASE_TS = "2026-04-25T05:07:49Z"  # V1.0 — first working end-to-end release
+log = logging.getLogger("reconciliation_tool")
+log.setLevel(logging.INFO)
+
+_BUILD = "1.0.1"
+_RELEASE_TS = "2026-04-25T05:07:49Z"  # V1.0 first end-to-end working release
 
 # ---------------------------------------------------------------------------
 # IBM Light Navy Blue theme
